@@ -52,6 +52,11 @@ async function do_sample(block_no){
         let txs = blk_info.tx;
         const N = txs.length;
         if(N > 0){
+            let spents = [];
+            let coins = [];
+            let payloads = [];
+
+
             for(let i = 0; i < N; i++){
                 let txid = txs[i];
                 debug.trace('[%d/%d] txid: %s', i, N, txid);
@@ -97,11 +102,21 @@ async function do_sample(block_no){
 
                 */
 
+                let ins = tx_info.vin;
+                if(ins.length > 0){
+                    for(let j = 0; j < ins.length; j++){
+                        let spent = ins[j];
+                        if(spent.txid){//coinbase won't have txid defined
+                            spents.push({
+                                tx_id: spent.txid,
+                                pos: spent.vout
+                            })
+                        }
+                    }                    
+                }
+
                 let outs = tx_info.vout;
                 if(outs.length > 0){
-                    let coins = [];
-                    let payloads = [];
-
                     for(let j = 0; j < outs.length; j++){
                         let out = outs[j];
                         if(out.value > 0){//only save non-zero utxo
@@ -114,9 +129,12 @@ async function do_sample(block_no){
 
                             coins.push({
                                 address: out.scriptPubKey.addresses[0],
+                                tx_id: txid,
+
                                 height: block_no,
-                                txid: txid,
-                                pos: j,
+                                tx_idx: i, //the i'th tx in the block
+                                pos: j, //the j'th output in the tx
+                                
                                 value: out.value,
                                 
                                 spent: false,
@@ -126,9 +144,11 @@ async function do_sample(block_no){
                         if(out.payloadSize > 0){
                             payloads.push({
                                 address: out.scriptPubKey.addresses[0],
+                                tx_id: txid,
+
                                 height: block_no,
-                                txid: txid,
-                                pos: j,
+                                tx_idx: i, //the i'th tx in the block
+                                pos: j, //the j'th output in the tx
 
                                 hint: out.payloadHint,
                                 subhint: out.payloadSubHint,
@@ -138,14 +158,19 @@ async function do_sample(block_no){
                         }
                     }
 
-                    if(coins.length > 0){
-                        await dal.addCoins(coins);
-                    }
-
-                    if(payloads.length > 0){
-                        await dal.addPayloads(payloads);
-                    }
                 }
+            }
+
+            if(coins.length > 0){
+                await dal.addCoins(coins);
+            }
+
+            if(payloads.length > 0){
+                await dal.addPayloads(payloads);
+            }
+
+            if(spents.length > 0){
+                await dal.addSpents(spents);
             }
         }
     }
@@ -225,7 +250,7 @@ module.exports = {
         let last_recorded_blocks = await dal.getLastRecordedBlockHeight();
         debug.trace(`latest recorded block: ${last_recorded_blocks}`);
 
-        if(latest_block > 161) latest_block = 161;
+       // if(latest_block > 162) latest_block = 162;
 
         if(latest_block > last_recorded_blocks){
             for(let i = last_recorded_blocks+1; i <= latest_block; i++){

@@ -19,43 +19,47 @@ module.exports = {
     async init(){
         debug.info("dal.init >>");
 
-        return MongoClient.connect(mongodb.url).then( db => {
-            mydb = db;
-            database = mydb.db('myidx');
+        mydb = await MongoClient.connect(mongodb.url);
+        database = mydb.db('myidx');
 
-            return database.collection('coins').createIndex({
-                address: 1
-            });
+        await database.collection('coins').createIndex({ address: 1 });
+        await database.collection('payloads').createIndex({ address: 1 });
 
-            debug.trace("%O", database);
-            debug.info("dal.init <<");
-        }).catch(err => {
-            debug.err(err.message);
-            throw err;
-        })
+        debug.info("dal.init <<");
     },
 
     close(){
         if(mydb) mydb.close();
     },
 
-    setLastRecordedBlockHeight(height){
+    async setLastRecordedBlockHeight(height){
         return database.collection("summary").replaceOne({ field: 'lastBlockHeight' }, {
             field: 'lastBlockHeight',
             value: height
         }, { upsert: true });
     },
 
-    getLastRecordedBlockHeight(){
-        return database.collection("summary").findOne({ field: 'lastBlockHeight'}).then( r => r.value );
+    async getLastRecordedBlockHeight(){
+        let r = await database.collection("summary").findOne({ field: 'lastBlockHeight'});
+        return r == null ? -1 : r.value;
     },
 
-    addCoins(coins){
+    async addCoins(coins){
         return database.collection("coins").insertMany(coins);
     },
 
-    addPayloads(payloads){
+    async addPayloads(payloads){
         return database.collection("payloads").insertMany(payloads);
     },
+
+    async addSpents(spents){
+        return Promise.all(spents.map(spent => {
+            return database.collection("coins").findOneAndUpdate(
+                { tx_id: spent.tx_id, pos: spent.pos },
+                { $set: { spent: true }},
+                { upsert: false }
+            );
+        }));
+    }
 
 }

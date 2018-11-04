@@ -22,10 +22,17 @@ function handle(signal){
 process.on('SIGINT', handle);
 process.on('SIGTERM', handle);
 
-Promise.all([sample.init(), dal.init()]).then(()=>{
-    const sample_interval = +process.env.SAMPLE_INTERVAL || 1000;
-    console.log(`Sampling interval = ${sample_interval}`);
-    setInterval(sample.run, sample_interval);
+const sample_interval = +process.env.SAMPLE_INTERVAL || 1000;
+console.log(`Sampling interval = ${sample_interval}`);
+
+function sample_run(){
+    return sample.run().then(r => {
+        setTimeout(sample_run, sample_interval);
+    })
+}
+
+return Promise.all([sample.init(), dal.init()]).then(()=>{
+   return sample_run();
 }).catch(err => {
     console.error(err.message);
 })
