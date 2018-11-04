@@ -1,28 +1,38 @@
 {
+    mongodb: {
+        url: "mongodb://localhost:8888",
+
+    },
+
+
     coins: {
         bpx: { 
             supportGetBlockchainInfo: false,
             getblock_verbose_bool: true,
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
+            genesis_tx_connected: false, //genesis tx is not accounted
         },
         btc: {
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //??
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
+            genesis_tx_connected: false, //genesis tx is not accounted
         },
         bch: {
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //??
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
+            genesis_tx_connected: false, //genesis tx is not accounted
         },
         ltc: {
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false,  //??
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)       
+            genesis_tx_connected: false, //genesis tx is not accounted
         }
     },
 
