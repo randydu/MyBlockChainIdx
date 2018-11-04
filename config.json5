@@ -1,0 +1,109 @@
+{
+    coins: {
+        bpx: { 
+            supportGetBlockchainInfo: false,
+            getblock_verbose_bool: true,
+            getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
+            estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
+        },
+        btc: {
+            supportGetBlockchainInfo: true,
+            getblock_verbose_bool: false, //??
+            getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
+            estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
+        },
+        bch: {
+            supportGetBlockchainInfo: true,
+            getblock_verbose_bool: false, //??
+            getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
+            estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
+        },
+        ltc: {
+            supportGetBlockchainInfo: true,
+            getblock_verbose_bool: false,  //??
+            getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
+            estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)       
+        }
+    },
+
+    "nodes": [
+        {
+            "id": "ltc-mainnet",
+            "description": "Litecoin main-net",
+            coin: "ltc",
+            "network": "mainnet",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9432,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "ltc",
+            "rpcpassword": "cHASEtOPcOIN_2018"
+        },
+        { 
+            "id": "ltc-test2018",
+            "description": "local ltc-test node",
+            coin: "ltc",
+            "network": "regtest",
+            "timeout": 300,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9434,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "ltc",
+            "rpcpassword": "123"
+        },
+        {
+            "id": "bpx-mainnet",
+            coin: "bpx",
+            "description": "BPX main-net",
+            "network": "mainnet",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9632,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "bpx",
+            "rpcpassword": "88488848"
+        },
+        {
+            "id": "bpx-mainnet-docker",
+            coin: "bpx",
+            "description": "BPX main-net",
+            "network": "mainnet",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9632,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "bpx",
+            "rpcpassword": "cHASEtOPcOIN_2018"
+        },
+        { 
+            "id": "bpx-test2018",
+            coin: "bpx",
+            "description": "local bpx-test node",
+            "network": "testnet",
+            "timeout": 300,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9634,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "bpx",
+            "rpcpassword": "123"
+        },
+        { 
+            "id": "bpx-test-debug",
+            coin: "bpx",
+            "description": "bpx-test debug in IDE",
+            "network": "testnet",
+            "timeout": 300,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9632,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "bpx",
+            "rpcpassword": "88488848"
+        }
+    ],    
+}
