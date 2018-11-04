@@ -1,0 +1,22 @@
+{
+  "name": "sam",
+  "version": "1.0.0",
+  "description": "MyIndex Sampler",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "MyIndex",
+    "BlockChain"
+  ],
+  "author": "randydu@gmail.com",
+  "license": "MIT",
+  "dependencies": {
+    "bignumber.js": "^8.0.1",
+    "bitcoin-core": "^2.0.0",
+    "dotenv": "^6.1.0",
+    "json5": "^2.1.0",
+    "mongodb": "^3.1.8"
+  }
+}
