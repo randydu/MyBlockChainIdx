@@ -7,6 +7,8 @@
 
     coins: {
         bpx: { 
+            apis: ["getrawmempool"],
+
             supportGetBlockchainInfo: false,
             getblock_verbose_bool: true,
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
@@ -14,6 +16,8 @@
             genesis_tx_connected: false, //genesis tx is not accounted
         },
         btc: {
+            apis: [],
+
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //??
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
@@ -21,6 +25,8 @@
             genesis_tx_connected: false, //genesis tx is not accounted
         },
         bch: {
+            apis: [],
+
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //??
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
@@ -28,6 +34,8 @@
             genesis_tx_connected: false, //genesis tx is not accounted
         },
         ltc: {
+            apis: [],
+            
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false,  //??
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool

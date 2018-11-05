@@ -22,8 +22,14 @@ module.exports = {
         mydb = await MongoClient.connect(mongodb.url);
         database = mydb.db('myidx');
 
-        await database.collection('coins').createIndex({ address: 1 });
-        await database.collection('payloads').createIndex({ address: 1 });
+        await Promise.all([
+            database.collection('coins').createIndexes([{ key: {address: 1}, name: "idx_addr" }, { key: {tx_id: 1, pos: 1}, name: "idx_spent"}]), 
+
+            database.collection('payloads').createIndexes([{ key: { address: 1 }, name: "idx_addr" }]),
+
+            database.collection('pending_coins').createIndexes([{ key: { address: 1 }, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx" } ]),
+            database.collection('pending_payloads').createIndexes([{ key: {address: 1}, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx"}])
+        ]);
 
         debug.info("dal.init <<");
     },
@@ -60,6 +66,22 @@ module.exports = {
                 { upsert: false }
             );
         }));
-    }
+    },
 
+    async addPendingCoins(coins){
+        return database.collection("pending_coins").insertMany(coins);
+    },
+
+    async addPendingPayloads(payloads){
+        return database.collection("pending_payloads").insertMany(payloads);
+    },
+
+    async removePendingTransactions(txids){
+        return Promise.all(txids.map(txid => {
+            let filter = { tx_id: { $eq: txid }};
+            return database.collection("pending_coins").remove(filter).then(()=> {
+                return database.collection("pending_payloads").remove(filter);
+            })
+        }));
+    },
 }

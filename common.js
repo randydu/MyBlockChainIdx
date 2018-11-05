@@ -21,8 +21,26 @@ function create_debug(name){
     };
 }
 
+//returns a promise executing input tasks (promises) in serial.
+function make_serial(tasks){
+    return tasks.reduce((chain, currentTask) => {
+        return chain.then(currentTask);
+    }, Promise.resolve());
+}
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+var _lodash = _interopRequireDefault(require("lodash"));
+
+function add_apis(client, apis){
+    apis.forEach(method => {
+        client[method] = _lodash.default.partial(client.command, method.toLowerCase());
+    })
+}
+
 module.exports = {
     config,
     delay,
     create_debug,
+    make_serial,
+    add_apis,
 }
