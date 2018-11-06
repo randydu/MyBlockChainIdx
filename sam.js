@@ -2,6 +2,8 @@
 
 const common = require('./common');
 
+const BigNumber = require('bignumber.js');
+
 const debug = common.create_debug('sam');
 const config = common.config;
 const dal = require('./dal');
@@ -68,19 +70,23 @@ async function process_txs(txs, block_no){
 
         */
 
-        if(block_no >= 0){
-            let ins = tx_info.vin;
-            if(ins.length > 0){
-                for(let j = 0; j < ins.length; j++){
-                    let spent = ins[j];
-                    if(spent.txid){//coinbase won't have txid defined
+        let ins = tx_info.vin;
+        if(ins.length > 0){
+            for(let j = 0; j < ins.length; j++){
+                let spent = ins[j];
+                if(spent.txid){//coinbase won't have txid defined
+                    //Detect if spent the same utxos (previous txs) in the same block.
+                    let oldLen = coins.length;
+                    coins = coins.filter(coin => (coin.tx_id != spent.txid)||(coin.pos != spent.vout));
+
+                    if(oldLen == coins.length){
                         spents.push({
                             tx_id: spent.txid,
                             pos: spent.vout
-                        })
+                        });
                     }
-                }                    
-            }
+                }
+            }                    
         }
 
         let outs = tx_info.vout;
@@ -94,7 +100,8 @@ async function process_txs(txs, block_no){
                         debug.fatal(msg);
                         throw new Error(msg);
                     }
-
+                    let vCoin = new BigNumber(out.value);
+                    vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
                     coins.push({
                         address: out.scriptPubKey.addresses[0],
                         tx_id: txid,
@@ -103,9 +110,9 @@ async function process_txs(txs, block_no){
                         tx_idx: i, //the i'th tx in the block
                         pos: j, //the j'th output in the tx
                         
-                        value: out.value,
+                        value: vCoin.toString(),
                         
-                        spent: false,
+                        //spent: false,
                     })
                 }
 

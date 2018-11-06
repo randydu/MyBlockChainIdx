@@ -60,11 +60,16 @@ module.exports = {
 
     async addSpents(spents){
         return Promise.all(spents.map(spent => {
+            return database.collection("coins").remove(
+                { tx_id: spent.tx_id, pos: spent.pos }
+            );
+            /*
             return database.collection("coins").findOneAndUpdate(
                 { tx_id: spent.tx_id, pos: spent.pos },
                 { $set: { spent: true }},
                 { upsert: false }
             );
+            */
         }));
     },
 
