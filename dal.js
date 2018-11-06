@@ -23,10 +23,11 @@ module.exports = {
         database = mydb.db('myidx');
 
         await Promise.all([
-            database.collection('coins').createIndexes([{ key: {address: 1}, name: "idx_addr" }, { key: {tx_id: 1, pos: 1}, name: "idx_spent"}]), 
+            database.collection('coins').createIndexes([{ key: {address: 1}, name: "idx_addr" }, { key: {tx_id: 1, pos: 1}, name: "idx_xo"}]), 
 
-            database.collection('payloads').createIndexes([{ key: { address: 1 }, name: "idx_addr" }]),
+            database.collection('payloads').createIndexes([{ key: { address: 1, hint: 1 }, name: "idx_addr_hint" }]),
 
+            database.collection('pending_spents').createIndexes([{ key: { address: 1 }, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx" } ]),
             database.collection('pending_coins').createIndexes([{ key: { address: 1 }, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx" } ]),
             database.collection('pending_payloads').createIndexes([{ key: {address: 1}, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx"}])
         ]);
@@ -73,6 +74,9 @@ module.exports = {
         }));
     },
 
+    async addPendingSpents(spents){
+        return database.collection("pending_spents").insertMany(spents);
+    },
     async addPendingCoins(coins){
         return database.collection("pending_coins").insertMany(coins);
     },
@@ -84,9 +88,11 @@ module.exports = {
     async removePendingTransactions(txids){
         return Promise.all(txids.map(txid => {
             let filter = { tx_id: { $eq: txid }};
-            return database.collection("pending_coins").remove(filter).then(()=> {
-                return database.collection("pending_payloads").remove(filter);
-            })
+            return Promise.all([
+                database.collection("pending_coins").remove(filter),
+                database.collection("pending_payloads").remove(filter),
+                database.collection("pending_spents").remove(filter)
+            ]);
         }));
     },
 }

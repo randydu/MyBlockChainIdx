@@ -80,10 +80,33 @@ async function process_txs(txs, block_no){
                     coins = coins.filter(coin => (coin.tx_id != spent.txid)||(coin.pos != spent.vout));
 
                     if(oldLen == coins.length){
-                        spents.push({
-                            tx_id: spent.txid,
+                        let obj = {
+                            tx_id: txid,
+                            spent_tx_id: spent.txid,
                             pos: spent.vout
-                        });
+                        }
+                        if(block_no < 0){
+                            //(address, value) is only needed for pending spents, the coins table only holds unspent xo.
+                            let tx_spent = await client.getRawTransaction(spent.txid, coin_traits.getrawtransaction_verbose_bool ? true : 1);
+                            if(tx_spent.vout.length <= spent.vout){
+                                let msg = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
+                                debug.fatal("tx_info: %O", tx_info);
+                                debug.fatal("tx_spent: %O", tx_spent);
+                                debug.fatal(msg);
+                                throw new Error(msg);
+                            }
+                            let out = tx_spent.vout[spent.vout];
+                            if(out.scriptPubKey.addresses.length != 1){
+                                let msg = `Spent UTXO with zero or multiple addresses not supported! txid [${spent.txid}] pos [${spent.pos}]`;
+                                debug.fatal(msg);
+                                throw new Error(msg);
+                            }
+                            obj.address = out.scriptPubKey.addresses[0];
+                            let vCoin = new BigNumber(out.value); 
+                            obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
+                        }
+
+                        spents.push(obj);
                     }
                 }
             }                    
@@ -170,10 +193,12 @@ async function process_txs(txs, block_no){
             }
         }
     } else { //pending
+        if(spents.length > 0){
+            tasks.push(dal.addPendingSpents(spents));
+        }
         if(coins.length > 0){
             tasks.push(dal.addPendingCoins(coins));
         }
-
         if(payloads.length > 0){
             tasks.push(dal.addPendingPayloads(payloads));
         }
