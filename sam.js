@@ -16,6 +16,10 @@ var node = null;
 var coin_traits = null;
 
 var pending_txids = new Set(); //pending txids
+
+//When it is the first time checking mempool, the pending txs might have been saved to database before
+//after that the pending_txids will avoid saving the same pending tx to database.
+var first_time_save_pendings = true;
 ////////////////////////////////////////////////////////////////
 
 async function process_txs(txs, block_no){
@@ -205,6 +209,10 @@ async function process_txs(txs, block_no){
             }
         }
     } else { //pending
+        if(first_time_save_pendings){
+            await dal.removePendingTransactions(txs);
+            first_time_save_pendings = false;
+        }
         if(spents.length > 0){
             tasks.push(dal.addPendingSpents(spents));
         }
@@ -275,11 +283,13 @@ async function sample_pendings(){
     if(txids.length > 0){
         let new_txids = []; //new pending txs to save to database.
 
-        txids.forEach(txid => {
-            if(!pending_txids.has(txid)){
-                new_txids.push(txid);
-            }
-        });
+        if(pending_txids.length > 0){
+            txids.forEach(txid => {
+                if(!pending_txids.has(txid)){
+                    new_txids.push(txid);
+                }
+            });
+        }else new_txids = txids;
 
         if(new_txids.length > 0){
             await process_txs(new_txids, -1);
