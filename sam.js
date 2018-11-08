@@ -22,6 +22,7 @@ async function process_txs(txs, block_no){
     let spents = [];
     let coins = [];
     let payloads = [];
+    let errs = [];
 
     const N = txs.length;
 
@@ -117,6 +118,17 @@ async function process_txs(txs, block_no){
             for(let j = 0; j < outs.length; j++){
                 let out = outs[j];
                 if(out.value > 0){//only save non-zero utxo
+                    if(typeof out.scriptPubKey.addresses === 'undefined'){
+                       errs.push({
+                           tx_id: txid,
+                           height: block_no,
+                           tx_idx: i,
+                           pos: j,
+                           message: `non-standard coin detected, no address defined.`,
+                           tx_info: tx_info
+                       });
+                       continue;
+                    }
 
                     if(out.scriptPubKey.addresses.length != 1){
                         let msg = `UTXO with zero or multiple addresses not supported! blk# [${block_no}] txid [${txid}] pos [${j}]`;
@@ -202,6 +214,11 @@ async function process_txs(txs, block_no){
         if(payloads.length > 0){
             tasks.push(dal.addPendingPayloads(payloads));
         }
+    }
+
+    //errs
+    if(errs.length > 0){
+        tasks.push(dal.addErrors(errs));
     }
 
     return Promise.all(tasks);

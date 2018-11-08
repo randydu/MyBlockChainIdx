@@ -51,6 +51,10 @@ module.exports = {
         return r == null ? -1 : r.value;
     },
 
+    async addErrors(errs){
+        return database.collection("errors").insertMany(errs);
+    },
+
     async addCoins(coins){
         return database.collection("coins").insertMany(coins);
     },
