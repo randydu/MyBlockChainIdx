@@ -66,7 +66,7 @@ module.exports = {
     async addSpents(spents){
         return Promise.all(spents.map(spent => {
             return database.collection("coins").remove(
-                { tx_id: spent.tx_id, pos: spent.pos }
+                { tx_id: spent.spent_tx_id, pos: spent.pos }
             );
             /*
             return database.collection("coins").findOneAndUpdate(

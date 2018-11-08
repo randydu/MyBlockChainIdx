@@ -283,7 +283,7 @@ async function sample_pendings(){
     if(txids.length > 0){
         let new_txids = []; //new pending txs to save to database.
 
-        if(pending_txids.length > 0){
+        if(pending_txids.size > 0){
             txids.forEach(txid => {
                 if(!pending_txids.has(txid)){
                     new_txids.push(txid);
@@ -377,8 +377,6 @@ module.exports = {
         let last_recorded_blocks = await dal.getLastRecordedBlockHeight();
         debug.info(`latest recorded block: ${last_recorded_blocks}`);
 
-       // if(latest_block > 162) latest_block = 162;
-
         if(latest_block > last_recorded_blocks){
             for(let i = last_recorded_blocks+1; i <= latest_block; i++){
                 await sample_block(i);
@@ -389,7 +387,6 @@ module.exports = {
 
         //pendings
         await sample_pendings();
-
 
         debug.info('sam.run << ');
     }

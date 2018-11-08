@@ -32,6 +32,7 @@ function sample_run(){
 }
 
 return Promise.all([sample.init(), dal.init()]).then(()=>{
+   // return sample.run();
    return sample_run();
 }).catch(err => {
     console.error(err.message);
