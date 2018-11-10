@@ -29,7 +29,9 @@ module.exports = {
 
             database.collection('pending_spents').createIndexes([{ key: { address: 1 }, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx" } ]),
             database.collection('pending_coins').createIndexes([{ key: { address: 1 }, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx" } ]),
-            database.collection('pending_payloads').createIndexes([{ key: {address: 1}, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx"}])
+            database.collection('pending_payloads').createIndexes([{ key: {address: 1}, name: "idx_addr" }, { key: {tx_id: 1}, name: "idx_tx"}]),
+
+            database.collection('rejects').createIndexes([{ key: { tx_id: 1 }, name: "idx_tx" }])
         ]);
 
         debug.info("dal.init <<");
@@ -99,4 +101,30 @@ module.exports = {
             ]);
         }));
     },
+
+    async check_rejection(){
+        let spents = await database.collection("pending_spents").find().toArray();
+        if(spents.length > 0){
+            let rejects = new Set();
+
+            await Promise.all(spents.map(sp => {
+                if(!rejects.has(sp.tx_id)){
+                    return database.collection("coins").count({tx_id: {$eq: sp.spent_tx_id}, pos: {$eq: sp.pos}}).then(count => {
+                        if(count == 0){
+                            //spent missing, must have been consumed by another transaction on blockchain!
+                            rejects.add(sp.tx_id);
+                        }
+                    })
+                }
+            }));
+
+            if(rejects.size > 0){
+                let txids = Array.from(rejects);
+                await Promise.all([
+                    database.collection("rejects").insertMany(txids.map(x => {tx_id: x})),
+                    this.removePendingTransactions(txids)
+                ])
+            }
+        }
+    }
 }

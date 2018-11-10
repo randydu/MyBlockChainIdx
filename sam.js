@@ -304,6 +304,14 @@ async function sample_pendings(){
     debug.info('check pendings <<');
 }
 
+async function check_rejection(){
+    debug.info('check tx rejection >>');
+
+    await dal.check_rejection();
+
+    debug.info('check tx rejection <<');
+}
+
 ////////////////////////////////////////////////////////////////
 module.exports = {
     async init(){
@@ -387,6 +395,9 @@ module.exports = {
 
         //pendings
         await sample_pendings();
+
+        //rejection
+        await check_rejection();
 
         debug.info('sam.run << ');
     }

@@ -12,7 +12,7 @@
             SAT_PER_COIN: 100000000, //coin to satoshi, translate the reported tx value (via api getrawtransaction) to its minimum unit 
 
             supportGetBlockchainInfo: false,
-            getblock_verbose_bool: true,
+            getblock_verbose_bool: true, //bool only
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
@@ -22,7 +22,7 @@
             SAT_PER_COIN: 100000000,
 
             supportGetBlockchainInfo: true,
-            getblock_verbose_bool: false, //??
+            getblock_verbose_bool: false, //both bool & 1/0 works fine
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
@@ -32,7 +32,7 @@
             SAT_PER_COIN: 100000000,
 
             supportGetBlockchainInfo: true,
-            getblock_verbose_bool: false, //??
+            getblock_verbose_bool: true, //bool only
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
@@ -42,7 +42,7 @@
             SAT_PER_COIN: 100000000,
 
             supportGetBlockchainInfo: true,
-            getblock_verbose_bool: false,  //??
+            getblock_verbose_bool: false, //both bool & 1/0 works fine
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)       
             genesis_tx_connected: false, //genesis tx is not accounted
