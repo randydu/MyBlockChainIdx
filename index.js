@@ -6,13 +6,17 @@ const common = require('./common');
 const sample = require('./sam');
 const dal = require('./dal');
 
-function handle(signal){
+let quit = false;
+
+async function handle(signal){
     console.log(`signal: ${signal}`);
 
     console.log('shutdown ...');
-    dal.close();
+    quit = true;
+    sample.stop = true;
 
-    common.delay(5000);
+    await common.delay(5000);
+    await dal.close();
     console.log('shutdown done!');
     process.exit(-1);
 }
@@ -26,6 +30,8 @@ const sample_interval = +process.env.SAMPLE_INTERVAL || 1000;
 console.log(`Sampling interval = ${sample_interval}`);
 
 function sample_run(){
+    if(quit) return;
+
     return sample.run().then(r => {
         setTimeout(sample_run, sample_interval);
     })

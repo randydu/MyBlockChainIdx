@@ -20,6 +20,8 @@ var pending_txids = new Set(); //pending txids
 //When it is the first time checking mempool, the pending txs might have been saved to database before
 //after that the pending_txids will avoid saving the same pending tx to database.
 var first_time_save_pendings = true;
+
+var first_time_check_blocks = true;
 ////////////////////////////////////////////////////////////////
 
 async function process_txs(txs, block_no){
@@ -126,7 +128,6 @@ async function process_txs(txs, block_no){
                        errs.push({
                            tx_id: txid,
                            height: block_no,
-                           tx_idx: i,
                            pos: j,
                            message: `non-standard coin detected, no address defined.`,
                            tx_info: tx_info
@@ -146,7 +147,6 @@ async function process_txs(txs, block_no){
                         tx_id: txid,
 
                         height: block_no,
-                        tx_idx: i, //the i'th tx in the block
                         pos: j, //the j'th output in the tx
                         
                         value: vCoin.toString(),
@@ -161,7 +161,6 @@ async function process_txs(txs, block_no){
                         tx_id: txid,
 
                         height: block_no,
-                        tx_idx: i, //the i'th tx in the block
                         pos: j, //the j'th output in the tx
 
                         hint: out.payloadHint,
@@ -175,8 +174,6 @@ async function process_txs(txs, block_no){
         }
     }
 
-    let tasks = [];
-
     if(block_no >= 0){
         if(txs.length > 0){
             //remove local cached txids
@@ -184,29 +181,20 @@ async function process_txs(txs, block_no){
                 pending_txids.delete(txid);
             });
 
-            tasks.push(dal.removePendingTransactions(txs));
+            await dal.removePendingTransactions(txs);
         }
 
         if(payloads.length > 0){
-            tasks.push(dal.addPayloads(payloads));
+            await dal.addPayloads(payloads);
         }
 
         //addCoins before addSpent! (to support spent uxio of tx in the same block)
-        let serial_tasks = [];
         if(coins.length > 0){
-            serial_tasks.push(dal.addCoins(coins));
+            await dal.addCoins(coins);
         }
 
         if(spents.length > 0){
-            serial_tasks.push(dal.addSpents(spents));
-        }
-
-        if(serial_tasks.length > 0){
-            if(serial_tasks.length == 1){
-                tasks.push(serial_tasks[0]);
-            }else{
-                tasks.push(common.make_serial(serial_tasks));
-            }
+            await dal.addSpents(spents);
         }
     } else { //pending
         if(first_time_save_pendings){
@@ -214,22 +202,20 @@ async function process_txs(txs, block_no){
             first_time_save_pendings = false;
         }
         if(spents.length > 0){
-            tasks.push(dal.addPendingSpents(spents));
+            await dal.addPendingSpents(spents);
         }
         if(coins.length > 0){
-            tasks.push(dal.addPendingCoins(coins));
+            await dal.addPendingCoins(coins);
         }
         if(payloads.length > 0){
-            tasks.push(dal.addPendingPayloads(payloads));
+            await dal.addPendingPayloads(payloads);
         }
     }
 
     //errs
     if(errs.length > 0){
-        tasks.push(dal.addErrors(errs));
+        await dal.addErrors(errs);
     }
-
-    return Promise.all(tasks);
 }
 
 async function sample_block(block_no){
@@ -314,6 +300,8 @@ async function check_rejection(){
 
 ////////////////////////////////////////////////////////////////
 module.exports = {
+    stop: false, //flag to indicate shut down immediately
+
     async init(){
         debug.trace('sam.init >> ');
 
@@ -386,18 +374,28 @@ module.exports = {
         debug.info(`latest recorded block: ${last_recorded_blocks}`);
 
         if(latest_block > last_recorded_blocks){
+            if(first_time_check_blocks){
+                first_time_check_blocks = false;
+                await Promise.all([dal.removeCoinsAfterHeight(last_recorded_blocks), dal.removePayloadsAfterHeight(last_recorded_blocks)]);
+            }
+
             for(let i = last_recorded_blocks+1; i <= latest_block; i++){
+                if(this.stop) break;
+
                 await sample_block(i);
 
                 await dal.setLastRecordedBlockHeight(i);
             }
         }
 
-        //pendings
-        await sample_pendings();
-
-        //rejection
-        await check_rejection();
+        if(!this.stop){
+            //pendings
+            await sample_pendings();
+        }
+        if(!this.stop){
+            //rejection
+            await check_rejection();
+        }
 
         debug.info('sam.run << ');
     }
