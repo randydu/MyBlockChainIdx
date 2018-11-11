@@ -15,6 +15,11 @@ const MongoClient = require('mongodb').MongoClient;
 var client = null;
 var database = null; 
 
+async function getNextCoinId(){
+    let r = await database.collection("coins").find().sort({_id: -1}).limit(1).next();
+    return r == null ? 1 : r._id + 1;
+}
+
 module.exports = {
     async init(){
         debug.info("dal.init >>");
@@ -100,11 +105,10 @@ module.exports = {
     },
 
     async addCoins(coins){
-        let N = await this.getLastValue('lastCoinId') + 1;
+        let N = await getNextCoinId();
         coins.forEach(x => x._id = N++);
 
         await database.collection("coins").insertMany(coins);
-        return this.setLastValue('lastCoinId', N-1)
     },
 
     async addPayloads(payloads){
