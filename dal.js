@@ -154,7 +154,7 @@ module.exports = {
 
             await Promise.all(spents.map(sp => {
                 if(!rejects.has(sp.tx_id)){
-                    return database.collection("coins").count({tx_id: {$eq: sp.spent_tx_id}, pos: {$eq: sp.pos}}).then(count => {
+                    return database.collection("coins").countDocuments({tx_id: {$eq: sp.spent_tx_id}, pos: {$eq: sp.pos}}).then(count => {
                         if(count == 0){
                             //spent missing, must have been consumed by another transaction on blockchain!
                             rejects.add(sp.tx_id);

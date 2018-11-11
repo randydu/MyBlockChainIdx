@@ -142,32 +142,35 @@ async function process_txs(txs, block_no){
                     }
                     let vCoin = new BigNumber(out.value);
                     vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
-                    coins.push({
+
+                    let obj = {
                         address: out.scriptPubKey.addresses[0],
                         tx_id: txid,
-
-                        height: block_no,
                         pos: j, //the j'th output in the tx
-                        
                         value: vCoin.toString(),
-                        
-                        //spent: false,
-                    })
+                    };
+
+                    if(block_no >= 0) obj.height = block_no; //pending_xxx does not have height field.
+
+                    coins.push(obj);
                 }
 
                 if(out.payloadSize > 0){
-                    payloads.push({
+                    let obj = {
                         address: out.scriptPubKey.addresses[0],
                         tx_id: txid,
 
-                        height: block_no,
                         pos: j, //the j'th output in the tx
 
                         hint: out.payloadHint,
                         subhint: out.payloadSubHint,
                         size: out.payloadSize,
                         payload: out.payload
-                    })
+                    }
+                    
+                    if(block_no >= 0) obj.height = block_no; //pending_xxx does not have height field.
+
+                    payloads.push(obj);
                 }
             }
 
