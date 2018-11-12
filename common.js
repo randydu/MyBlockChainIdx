@@ -7,6 +7,30 @@ const fs = require('fs');
 const JSON5 = require('json5');
 const config = JSON5.parse(fs.readFileSync(__dirname + '/config.json5'));
 
+function resolve_config(){
+    // full node
+    let node = null;
+    let nodeId = process.env.COIN_NODEID;
+    if(nodeId){
+        config.nodes.forEach(n=>{
+            if(n.id == nodeId) node = n;
+        });
+    }
+
+    if (node == null) node = config.nodes[0]; //fallover to first node if not specified in config (.env)
+    if(node == null)
+        throw new Error("full node cannot be resolved!");
+    
+    config.node = node;
+
+    let coin_traits = config.coins[node.coin];
+    if(typeof coin_traits == 'undefined') throw new Error(`coin_traits for "${node.coin}" not defined!`);
+
+    config.coin_traits = coin_traits;
+}
+
+resolve_config();
+
 
 const delay = (duration) => new Promise(resolve => setTimeout(resolve, duration));
 

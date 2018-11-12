@@ -40,7 +40,7 @@ module.exports = {
             database.collection('coins').createIndexes([
                 { key: {address: 1}, name: "idx_addr" }, 
                 { key: {height: 1}, name: "idx_height" }, 
-                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true },
+                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: config.coin_traits.BIP34 },
             ]), 
 
             database.collection('payloads').createIndexes([
@@ -108,7 +108,7 @@ module.exports = {
         let N = await getNextCoinId();
         coins.forEach(x => x._id = N++);
 
-        await database.collection("coins").insertMany(coins);
+        return database.collection("coins").insertMany(coins);
     },
 
     async addPayloads(payloads){
@@ -119,6 +119,10 @@ module.exports = {
 
     async addSpents(spents){
         return Promise.all(spents.map(spent => {
+            //BIP34: the first coin (tx_id, pos) is spent. 
+            //for non-BIP34 compatible coin, there could be multiple coins (tx_id, pos).
+            //Ex: bitcoin (d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599, 0) appears in
+            //block #91842, #91812
             return database.collection("coins").deleteOne(
                 { tx_id: spent.spent_tx_id, pos: spent.pos }
             );

@@ -6,14 +6,16 @@ const BigNumber = require('bignumber.js');
 
 const debug = common.create_debug('sam');
 const config = common.config;
+
+const node = config.node;
+const coin_traits = config.coin_traits;
+
 const dal = require('./dal');
 
 const Client = require('bitcoin-core');
 
 //initialized in init();
 var client = null; 
-var node = null;
-var coin_traits = null;
 
 var pending_txids = new Set(); //pending txids
 
@@ -307,22 +309,6 @@ module.exports = {
 
     async init(){
         debug.trace('sam.init >> ');
-
-        // full node
-        let nodeId = process.env.COIN_NODEID;
-        if(nodeId){
-            config.nodes.forEach(n=>{
-                if(n.id == nodeId) node = n;
-            });
-        }
-
-        if (node == null) node = config.nodes[0]; //fallover to first node if not specified in config (.env)
-        if(node == null)
-            throw new Error("full node cannot be resolved!");
-
-        coin_traits = config.coins[node.coin];
-        if(typeof coin_traits == 'undefined') throw new Error(`coin_traits for "${node.coin}" not defined!`);
-        debug.warn("%O", coin_traits);
 
         //full-node accessor
         client = new Client({

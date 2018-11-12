@@ -16,6 +16,8 @@
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
+
+            BIP34: true, //https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki
         },
         btc: {
             apis: [],
@@ -26,6 +28,8 @@
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
+            
+            BIP34: false, //only support from block #227,836
         },
         bch: {
             apis: [],
@@ -36,6 +40,8 @@
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
+
+            BIP34: false,
         },
         ltc: {
             apis: [],
@@ -46,6 +52,8 @@
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
             estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)       
             genesis_tx_connected: false, //genesis tx is not accounted
+
+            BIP34: false,
         }
     },
 
