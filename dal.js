@@ -123,6 +123,12 @@ module.exports = {
     },
 
     async addSpents(spents){
+        return database.collection("coins").bulkWrite( spents.map(spent => {
+            return {
+                deleteOne: { "filter": {"tx_id": spent.spent_tx_id, "pos": spent.pos}}
+            }
+        }), { ordered: false });
+        /*
         return Promise.all(spents.map(spent => {
             //BIP34: the first coin (tx_id, pos) is spent. 
             //for non-BIP34 compatible coin, there could be multiple coins (tx_id, pos).
@@ -132,6 +138,7 @@ module.exports = {
                 { tx_id: spent.spent_tx_id, pos: spent.pos }
             );
         }));
+        */
     },
 
     async addPendingSpents(spents){
@@ -146,6 +153,27 @@ module.exports = {
     },
 
     async removePendingTransactions(txids){
+        return Promise.all([
+            database.collection("pending_coins").bulkWrite(txids.map(txid => {
+                return {
+                    deleteMany: { "filter": { "tx_id": { $eq: txid } }}
+                }
+            }), { ordered: false} ),
+
+            database.collection("pending_payloads").bulkWrite(txids.map(txid => {
+                return {
+                    deleteMany: { "filter": { "tx_id": { $eq: txid } }}
+                }
+            }), { ordered: false} ),
+
+            database.collection("pending_spents").bulkWrite(txids.map(txid => {
+                return {
+                    deleteMany: { "filter": { "tx_id": { $eq: txid } }}
+                }
+            }), { ordered: false} ),
+        ]);
+        
+        /*
         return Promise.all(txids.map(txid => {
             let filter = { tx_id: { $eq: txid }};
             return Promise.all([
@@ -154,6 +182,7 @@ module.exports = {
                 database.collection("pending_spents").deleteMany(filter)
             ]);
         }));
+        */
     },
 
     async check_rejection(){
