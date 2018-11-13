@@ -1,15 +1,10 @@
 {
-    mongodb: {
-        //url: "mongodb://localhost:8888",
-        url: "mongodb://localhost:7777",
-
-    },
-
-
-    coins: {
+    coins: {//coin_traits
         bpx: { 
             apis: ["getrawmempool"],
             SAT_PER_COIN: 100000000, //coin to satoshi, translate the reported tx value (via api getrawtransaction) to its minimum unit 
+
+            payload: true, //support payload
 
             supportGetBlockchainInfo: false,
             getblock_verbose_bool: true, //bool only
@@ -18,10 +13,13 @@
             genesis_tx_connected: false, //genesis tx is not accounted
 
             BIP34: true, //https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki
+            REST: false, //do not support rest-api
         },
         btc: {
             apis: [],
             SAT_PER_COIN: 100000000,
+
+            payload: false,
 
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //both bool & 1/0 works fine
@@ -30,11 +28,13 @@
             genesis_tx_connected: false, //genesis tx is not accounted
             
             BIP34: false, //only support from block #227,836
+            REST: true,
         },
         bch: {
             apis: [],
             SAT_PER_COIN: 100000000,
 
+            payload: false,
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: true, //bool only
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
@@ -42,11 +42,13 @@
             genesis_tx_connected: false, //genesis tx is not accounted
 
             BIP34: false,
+            REST: true,
         },
         ltc: {
             apis: [],
             SAT_PER_COIN: 100000000,
 
+            payload: false,
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //both bool & 1/0 works fine
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
@@ -54,10 +56,24 @@
             genesis_tx_connected: false, //genesis tx is not accounted
 
             BIP34: false,
+            REST: true,
         }
     },
 
     "nodes": [
+        {
+            "id": "btc-mainnet",
+            "description": "Bitcoin main-net",
+            coin: "btc",
+            "network": "mainnet",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 8332,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "bitcoin",
+            "rpcpassword": "cHASEtOPcOIN_2018"
+        },
         {
             "id": "ltc-mainnet",
             "description": "Litecoin main-net",
@@ -69,6 +85,19 @@
             "rpcport": 9432,
             "rpchost": "127.0.0.1",
             "rpcuser": "ltc",
+            "rpcpassword": "cHASEtOPcOIN_2018"
+        },
+        {
+            "id": "bch-mainnet",
+            "description": "Bitcoin-cash main-net",
+            coin: "bch",
+            "network": "mainnet",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9532,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "bch",
             "rpcpassword": "cHASEtOPcOIN_2018"
         },
         { 
@@ -85,7 +114,7 @@
             "rpcpassword": "123"
         },
         {
-            "id": "bpx-mainnet",
+            "id": "bpx-mainnet-bare",
             coin: "bpx",
             "description": "BPX main-net",
             "network": "mainnet",
@@ -98,7 +127,7 @@
             "rpcpassword": "88488848"
         },
         {
-            "id": "bpx-mainnet-docker",
+            "id": "bpx-mainnet",
             coin: "bpx",
             "description": "BPX main-net",
             "network": "mainnet",

@@ -9,6 +9,8 @@ const config = common.config;
 
 const node = config.node;
 const coin_traits = config.coin_traits;
+const support_payload = coin_traits.payload;
+const use_rest_api = config.use_rest_api;
 
 const dal = require('./dal');
 
@@ -26,6 +28,16 @@ var first_time_save_pendings = true;
 var first_time_check_blocks = true;
 ////////////////////////////////////////////////////////////////
 
+async function getLatestBlockCount(){
+    if(use_rest_api){
+        let r = await client.getBlockchainInformation();
+        return r.blocks;
+    }else{
+        return client.getBlockCount();
+    }
+}
+
+
 async function process_txs(txs, block_no){
     let spents = [];
     let coins = [];
@@ -38,8 +50,12 @@ async function process_txs(txs, block_no){
         let txid = txs[i];
         debug.trace('[%d/%d] txid: %s', i, N, txid);
 
-        let tx_info = await client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1);
+        let tx_info = use_rest_api ?
+            await client.getTransactionByHash(txid) //REST-API
+            : await client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1); //RPC-API
         /**
+         * 
+         * RPC:
          * {
             "hex" : "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff1e029b00062f503253482f0409d47f5b0881000003000000007969696d700000000000010000e1f5050000001976a914a2757813e8c98fa81b0e14574aeb8a1891ed0f5f88ac000000000009d47f5b",
             "txid" : "4899bb0e9b692e182a10705c0726d540edaa95567f0190ad399628e713a77ae3",
@@ -157,7 +173,7 @@ async function process_txs(txs, block_no){
                     coins.push(obj);
                 }
 
-                if(out.payloadSize > 0){
+                if(support_payload && (out.payloadSize > 0)){
                     let obj = {
                         address: out.scriptPubKey.addresses[0],
                         tx_id: txid,
@@ -189,7 +205,7 @@ async function process_txs(txs, block_no){
             await dal.removePendingTransactions(txs);
         }
 
-        if(payloads.length > 0){
+        if(support_payload && (payloads.length > 0)){
             await dal.addPayloads(payloads);
         }
 
@@ -212,7 +228,7 @@ async function process_txs(txs, block_no){
         if(coins.length > 0){
             await dal.addPendingCoins(coins);
         }
-        if(payloads.length > 0){
+        if(support_payload && (payloads.length > 0)){
             await dal.addPendingPayloads(payloads);
         }
     }
@@ -226,12 +242,17 @@ async function process_txs(txs, block_no){
 async function sample_block(block_no){
     debug.info(`sampling ${block_no} >>`);
 
-    let blk_hash = await client.getBlockHash(block_no);
-    //debug("%s", blk_hash);
-    let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
-    debug.trace("%O", blk_info);
-
     if(block_no != 0 || coin_traits.genesis_tx_connected){
+        let blk_hash = await client.getBlockHash(block_no);
+
+        if(use_rest_api){
+            let r = await client.getBlockHeadersByHash(blk_hash, 3);
+            let s = await client.getBlockByHash(r[0].hash);
+            return s;
+        }
+        let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
+        debug.trace("%O", blk_info);
+
         /**
          * {
         "hash" : "000000078ffb6946a3f964d39f70f1fe5d1215c40684526a590c1d6ef1682860",
@@ -355,7 +376,7 @@ module.exports = {
     async run(){
         debug.info('sam.run >> ');
 
-        let latest_block = await client.getBlockCount();
+        let latest_block = await getLatestBlockCount();
 
         debug.info(`latest block: ${latest_block}`);
 

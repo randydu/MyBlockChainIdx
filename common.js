@@ -21,12 +21,22 @@ function resolve_config(){
     if(node == null)
         throw new Error("full node cannot be resolved!");
     
+    //override node settings by env
+    node.rpcport = process.env.RPC_PORT || node.rpcport;
+    node.rpchost = process.env.RPC_HOST || node.rpchost;
+    node.rpcuser = process.env.RPC_USER || node.rpcuser;
+    node.rpcpassword = process.env.RPC_PASSWORD || node.rpcpassword;
+
     config.node = node;
 
     let coin_traits = config.coins[node.coin];
     if(typeof coin_traits == 'undefined') throw new Error(`coin_traits for "${node.coin}" not defined!`);
 
     config.coin_traits = coin_traits;
+
+    //use REST API?
+    config.use_rest_api = +process.env.USE_REST_API;
+    if(!coin_traits.REST) config.use_rest_api = 0;
 }
 
 resolve_config();

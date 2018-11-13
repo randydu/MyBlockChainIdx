@@ -8,8 +8,6 @@ const common = require('./common');
 const debug = common.create_debug('dal');
 const config = common.config;
 
-const mongodb = config.mongodb;
-debug.info("%O", mongodb);
 
 const MongoClient = require('mongodb').MongoClient;
 var client = null;
@@ -24,16 +22,21 @@ module.exports = {
     async init(){
         debug.info("dal.init >>");
 
-        client = await MongoClient.connect(mongodb.url, { useNewUrlParser: true });
+        let mongodb_url = process.env.MONGODB_URL;
+        debug.info("MONGODB_URL=%s", mongodb_url);
+        client = await MongoClient.connect(mongodb_url, { useNewUrlParser: true });
         database = client.db('myidx');
+
+        const support_payload = config.coin_traits.payload;
 
         await Promise.all([
             database.createCollection("coins"),
-            database.createCollection("payloads"),
             database.createCollection("pending_spents"),
             database.createCollection("pending_coins"),
-            database.createCollection("pending_payloads"),
             database.createCollection("rejects"),
+
+            support_payload ? database.createCollection("payloads") : Promise.resolve(),
+            support_payload ? database.createCollection("pending_payloads") : Promise.resolve(),
         ]);
 
         await Promise.all([
@@ -43,11 +46,11 @@ module.exports = {
                 { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: config.coin_traits.BIP34 },
             ]), 
 
-            database.collection('payloads').createIndexes([
+            support_payload ? database.collection('payloads').createIndexes([
                 { key: { address: 1, hint: 1, subhint:1 }, name: "idx_addr_hint" }, 
                 { key: {height: 1}, name: "idx_height" }, 
                 { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true },
-            ]),
+            ]) : Promise.resolve(),
 
             database.collection('pending_spents').createIndexes([
                 { key: { address: 1 }, name: "idx_addr" }, 
@@ -57,10 +60,12 @@ module.exports = {
                 { key: { address: 1 }, name: "idx_addr" }, 
                 { key: {tx_id: 1}, name: "idx_tx" } 
             ]),
-            database.collection('pending_payloads').createIndexes([
+            
+            support_payload ? database.collection('pending_payloads').createIndexes([
                 { key: {address: 1}, name: "idx_addr" }, 
                 { key: {tx_id: 1}, name: "idx_tx"}
-            ]),
+            ]): Promise.resolve(),
+
             database.collection('rejects').createIndexes([
                 { key: { tx_id: 1 }, name: "idx_tx", unique: true }
             ])
