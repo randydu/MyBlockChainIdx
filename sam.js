@@ -339,13 +339,14 @@ async function sample_pendings(){
 
         let tis = [];
         if(new_txids.length > 0){
-            new_txids.forEach(txid => {
+            for(let i = 0; i < new_txids.length; i++){
+                let txid = new_txids[i];
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){
                     throw_error(`transaction [${txid}]  not found!`);
                 }
                 tis.push(ti);
-            });
+            };
 
             await process_tis([{
                 height: -1, //pending
