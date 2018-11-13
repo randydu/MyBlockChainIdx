@@ -1,4 +1,6 @@
 {
+    batch_blocks: 100, //check how many blocks in a batch
+
     coins: {//coin_traits
         bpx: { 
             apis: ["getrawmempool"],

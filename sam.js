@@ -27,6 +27,10 @@ var first_time_save_pendings = true;
 
 var first_time_check_blocks = true;
 ////////////////////////////////////////////////////////////////
+function throw_error(msg){
+    debug.err(msg);
+    throw new Error(msg);
+}
 
 async function getLatestBlockCount(){
     if(use_rest_api){
@@ -37,172 +41,204 @@ async function getLatestBlockCount(){
     }
 }
 
+async function getTransactionInfo(txid){
+    if(use_rest_api){
+        return client.getTransactionByHash(txid);
+    }else{
+        return client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1);
+    }
+}
 
-async function process_txs(txs, block_no){
+async function process_tis(blk_tis){
     let spents = [];
     let coins = [];
     let payloads = [];
     let errs = [];
+    let txids = [];
 
-    const N = txs.length;
+    let pending = false;
 
-    for(let i = 0; i < N; i++){
-        let txid = txs[i];
-        debug.trace('[%d/%d] txid: %s', i, N, txid);
+    for(let k = 0; k < blk_tis.length; k++){
+        let { height, tis } = blk_tis[k];
+        
+        if(height < 0) pending = true;
+        
+        const N = tis.length;
 
-        let tx_info = use_rest_api ?
-            await client.getTransactionByHash(txid) //REST-API
-            : await client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1); //RPC-API
-        /**
-         * 
-         * RPC:
-         * {
-            "hex" : "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff1e029b00062f503253482f0409d47f5b0881000003000000007969696d700000000000010000e1f5050000001976a914a2757813e8c98fa81b0e14574aeb8a1891ed0f5f88ac000000000009d47f5b",
-            "txid" : "4899bb0e9b692e182a10705c0726d540edaa95567f0190ad399628e713a77ae3",
-            "version" : 2,
-            "txtime" : 1535104009,
-            "locktime" : 0,
-            "vin" : [
-                {
-                    "coinbase" : "029b00062f503253482f0409d47f5b0881000003000000007969696d7000",
-                    "sequence" : 0
-                }
-            ],
-            "vout" : [
-                {
-                    "value" : 256.00000000,
-                    "n" : 0,
-                    "scriptPubKey" : {
-                        "asm" : "OP_DUP OP_HASH160 a2757813e8c98fa81b0e14574aeb8a1891ed0f5f OP_EQUALVERIFY OP_CHECKSIG",
-                        "hex" : "76a914a2757813e8c98fa81b0e14574aeb8a1891ed0f5f88ac",
-                        "reqSigs" : 1,
-                        "type" : "pubkeyhash",
-                        "addresses" : [
-                            "BKG5oggWaVeKYTRM4aVAzKc48ATCXXSyZb"
-                        ]
-                    },
-                    "payloadHint" : 0,
-                    "payloadSubHint" : 0,
-                    "payloadSize" : 0,
-                    "payload" : ""
-                }
-            ],
-            "blockhash" : "000000031757ff0d32fceaf68fde9444e90391542120d6776ac3f0e30a9401ee",
-            "confirmations" : 28218,
-            "time" : 1535104009,
-            "blocktime" : 1535104009
-        }
+        for(let i = 0; i < N; i++){
 
-        */
+            let tx_info = tis[i];
+            let txid = tx_info.txid;
 
-        let ins = tx_info.vin;
-        if(ins.length > 0){
-            for(let j = 0; j < ins.length; j++){
-                let spent = ins[j];
-                if(spent.txid){//coinbase won't have txid defined
-                    //Detect if spent the same utxos (previous txs) in the same block.
-                    let oldLen = coins.length;
-                    coins = coins.filter(coin => (coin.tx_id != spent.txid)||(coin.pos != spent.vout));
+            debug.trace('height[%d] >> [%d/%d] txid: %s', height, i, N, txid);
 
-                    if(oldLen == coins.length){
-                        let obj = {
-                            tx_id: txid,
-                            spent_tx_id: spent.txid,
-                            pos: spent.vout
-                        }
-                        if(block_no < 0){
-                            //(address, value) is only needed for pending spents, the coins table only holds unspent xo.
-                            let tx_spent = await client.getRawTransaction(spent.txid, coin_traits.getrawtransaction_verbose_bool ? true : 1);
-                            if(tx_spent.vout.length <= spent.vout){
-                                let msg = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
-                                debug.fatal("tx_info: %O", tx_info);
-                                debug.fatal("tx_spent: %O", tx_spent);
-                                debug.fatal(msg);
-                                throw new Error(msg);
-                            }
-                            let out = tx_spent.vout[spent.vout];
-                            if(out.scriptPubKey.addresses.length != 1){
-                                let msg = `Spent UTXO with zero or multiple addresses not supported! txid [${spent.txid}] pos [${spent.pos}]`;
-                                debug.fatal(msg);
-                                throw new Error(msg);
-                            }
-                            obj.address = out.scriptPubKey.addresses[0];
-                            let vCoin = new BigNumber(out.value); 
-                            obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
-                        }
-
-                        spents.push(obj);
+            txids.push(txid);
+            /**
+             * 
+             * RPC:
+             * {
+                "hex" : "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff1e029b00062f503253482f0409d47f5b0881000003000000007969696d700000000000010000e1f5050000001976a914a2757813e8c98fa81b0e14574aeb8a1891ed0f5f88ac000000000009d47f5b",
+                "txid" : "4899bb0e9b692e182a10705c0726d540edaa95567f0190ad399628e713a77ae3",
+                "version" : 2,
+                "txtime" : 1535104009,
+                "locktime" : 0,
+                "vin" : [
+                    {
+                        "coinbase" : "029b00062f503253482f0409d47f5b0881000003000000007969696d7000",
+                        "sequence" : 0
                     }
-                }
-            }                    
-        }
-
-        let outs = tx_info.vout;
-        if(outs.length > 0){
-            for(let j = 0; j < outs.length; j++){
-                let out = outs[j];
-                if(out.value > 0){//only save non-zero utxo
-                    if(typeof out.scriptPubKey.addresses === 'undefined'){
-                       errs.push({
-                           tx_id: txid,
-                           height: block_no,
-                           pos: j,
-                           message: `non-standard coin detected, no address defined.`,
-                           tx_info: tx_info
-                       });
-                       continue;
+                ],
+                "vout" : [
+                    {
+                        "value" : 256.00000000,
+                        "n" : 0,
+                        "scriptPubKey" : {
+                            "asm" : "OP_DUP OP_HASH160 a2757813e8c98fa81b0e14574aeb8a1891ed0f5f OP_EQUALVERIFY OP_CHECKSIG",
+                            "hex" : "76a914a2757813e8c98fa81b0e14574aeb8a1891ed0f5f88ac",
+                            "reqSigs" : 1,
+                            "type" : "pubkeyhash",
+                            "addresses" : [
+                                "BKG5oggWaVeKYTRM4aVAzKc48ATCXXSyZb"
+                            ]
+                        },
+                        "payloadHint" : 0,
+                        "payloadSubHint" : 0,
+                        "payloadSize" : 0,
+                        "payload" : ""
                     }
-
-                    if(out.scriptPubKey.addresses.length != 1){
-                        let msg = `UTXO with zero or multiple addresses not supported! blk# [${block_no}] txid [${txid}] pos [${j}]`;
-                        debug.fatal(msg);
-                        throw new Error(msg);
-                    }
-                    let vCoin = new BigNumber(out.value);
-                    vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
-
-                    let obj = {
-                        address: out.scriptPubKey.addresses[0],
-                        tx_id: txid,
-                        pos: j, //the j'th output in the tx
-                        value: vCoin.toString(),
-                    };
-
-                    if(block_no >= 0) obj.height = block_no; //pending_xxx does not have height field.
-
-                    coins.push(obj);
-                }
-
-                if(support_payload && (out.payloadSize > 0)){
-                    let obj = {
-                        address: out.scriptPubKey.addresses[0],
-                        tx_id: txid,
-
-                        pos: j, //the j'th output in the tx
-
-                        hint: out.payloadHint,
-                        subhint: out.payloadSubHint,
-                        size: out.payloadSize,
-                        payload: out.payload
-                    }
-                    
-                    if(block_no >= 0) obj.height = block_no; //pending_xxx does not have height field.
-
-                    payloads.push(obj);
-                }
+                ],
+                "blockhash" : "000000031757ff0d32fceaf68fde9444e90391542120d6776ac3f0e30a9401ee",
+                "confirmations" : 28218,
+                "time" : 1535104009,
+                "blocktime" : 1535104009
             }
 
+            */
+
+
+
+            let ins = tx_info.vin;
+            if(ins.length > 0){
+                for(let j = 0; j < ins.length; j++){
+                    let spent = ins[j];
+                    if(spent.txid){//coinbase won't have txid defined
+                        //Detect if spent the same utxos (previous txs) in the same block.
+                        let oldLen = coins.length;
+                        //Cancel the (coin, spent) pair in memory
+                        for(let m = 0; m < coins.length; m++){
+                            let coin = coins[m];
+                            if((coin.tx_id == spent.txid) && (coin.pos == spent.vout)){
+                                /**
+                                 * First matched coin is spent.
+                                 * For non-BIP34 compatible cryptocurrency, there might be more than one matched coins, we want only one coin 
+                                 * (the first matched) is cancelled, that is why we cannot use the following code:
+                                 * 
+                                 *  coins = coins.filter(coin => (coin.tx_id != spent.txid)||(coin.pos != spent.vout));
+                                 * 
+                                 *  it may spend multiple coins with a single spent.
+                                 */
+                                coins.splice(m, 1);
+                                break;
+                            }
+                        }
+
+                        if(oldLen == coins.length){
+                            let obj = {
+                                tx_id: txid,
+                                spent_tx_id: spent.txid,
+                                pos: spent.vout
+                            }
+                            if(pending){
+                                //(address, value) is only needed for pending spents, the coins table only holds unspent xo.
+                                //TODO: we can retrieve the (address, value) info from dal --- the coin should already be in database.
+                                let tx_spent = await getTransactionInfo(spent.txid);
+                                if(tx_spent.vout.length <= spent.vout){
+                                    let msg = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
+                                    debug.fatal("tx_info: %O", tx_info);
+                                    debug.fatal("tx_spent: %O", tx_spent);
+                                    debug.fatal(msg);
+                                    throw new Error(msg);
+                                }
+                                let out = tx_spent.vout[spent.vout];
+                                if(out.scriptPubKey.addresses.length != 1){
+                                    let msg = `Spent UTXO with zero or multiple addresses not supported! txid [${spent.txid}] pos [${spent.pos}]`;
+                                    debug.fatal(msg);
+                                    throw new Error(msg);
+                                }
+                                obj.address = out.scriptPubKey.addresses[0];
+                                let vCoin = new BigNumber(out.value); 
+                                obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
+                            }
+
+                            spents.push(obj);
+                        }
+                    }
+                }                    
+            }
+
+            let outs = tx_info.vout;
+            if(outs.length > 0){
+                for(let j = 0; j < outs.length; j++){
+                    let out = outs[j];
+                    if(out.value > 0){//only save non-zero utxo
+                        if(typeof out.scriptPubKey.addresses === 'undefined'){
+                        errs.push({
+                            tx_id: txid,
+                            height: height,
+                            pos: j,
+                            message: `non-standard coin detected, no address defined.`,
+                            tx_info: tx_info
+                        });
+                        continue;
+                        }
+
+                        if(out.scriptPubKey.addresses.length != 1){
+                            throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
+                        }
+                        let vCoin = new BigNumber(out.value);
+                        vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
+
+                        let obj = {
+                            address: out.scriptPubKey.addresses[0],
+                            tx_id: txid,
+                            pos: j, //the j'th output in the tx
+                            value: vCoin.toString(),
+                        };
+
+                        if(height >= 0) obj.height = height; //pending_xxx does not have height field.
+
+                        coins.push(obj);
+                    }
+
+                    if(support_payload && (out.payloadSize > 0)){
+                        let obj = {
+                            address: out.scriptPubKey.addresses[0],
+                            tx_id: txid,
+
+                            pos: j, //the j'th output in the tx
+
+                            hint: out.payloadHint,
+                            subhint: out.payloadSubHint,
+                            size: out.payloadSize,
+                            payload: out.payload
+                        }
+                        
+                        if(height >= 0) obj.height = height; //pending_xxx does not have height field.
+
+                        payloads.push(obj);
+                    }
+                }
+            }
         }
     }
 
-    if(block_no >= 0){
-        if(txs.length > 0){
+    if(!pending){
+        if(txids.length > 0){
             //remove local cached txids
-            txs.forEach(txid => {
+            txids.forEach(txid => {
                 pending_txids.delete(txid);
             });
-
-            await dal.removePendingTransactions(txs);
+            await dal.removePendingTransactions(txids);
         }
 
         if(support_payload && (payloads.length > 0)){
@@ -219,7 +255,7 @@ async function process_txs(txs, block_no){
         }
     } else { //pending
         if(first_time_save_pendings){
-            await dal.removePendingTransactions(txs);
+            await dal.removePendingTransactions(txids);
             first_time_save_pendings = false;
         }
         if(spents.length > 0){
@@ -246,8 +282,6 @@ async function sample_block(block_no){
         let blk_hash = await client.getBlockHash(block_no);
 
         if(use_rest_api){
-            let r = await client.getBlockHeadersByHash(blk_hash, 3);
-            let s = await client.getBlockByHash(r[0].hash);
             return s;
         }
         let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
@@ -303,8 +337,20 @@ async function sample_pendings(){
             });
         }else new_txids = txids;
 
+        let tis = [];
         if(new_txids.length > 0){
-            await process_txs(new_txids, -1);
+            new_txids.forEach(txid => {
+                let ti = await getTransactionInfo(txid);
+                if(ti == null){
+                    throw_error(`transaction [${txid}]  not found!`);
+                }
+                tis.push(ti);
+            });
+
+            await process_tis([{
+                height: -1, //pending
+                tis: tis
+            }]);
 
             //now update on success
             new_txids.forEach(txid => {
@@ -324,6 +370,58 @@ async function check_rejection(){
     debug.info('check tx rejection <<');
 }
 
+let start_blk_hash = null; //rest-only
+
+/**
+ * nStart: block_hash(nStart) == start_blk_hash; (REST)
+ * nEnd: next start of batch
+ */
+
+async function sample_batch(nStart, nEnd /* exclude */){
+    let blk_tis = [];
+
+    debug.info(`sync [${nStart}, ${nEnd})...`);
+
+    if(use_rest_api){
+        //rest-api
+        if(start_blk_hash == null){
+            start_blk_hash = await client.getBlockHash(nStart);
+        }
+        let hdrs = await client.getBlockHeadersByHash(start_blk_hash, nEnd - nStart);
+        for(let i = nStart; i < nEnd; i++){
+            let blk_info = await client.getBlockByHash(hdrs[i-nStart].hash);
+
+            if(blk_info.height != i){
+                throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
+            }
+
+            blk_tis.push({
+                height: i,
+                tis: blk_info.tx
+            });
+        }
+        start_blk_hash = hdrs[nEnd-nStart-1].nextblockhash;
+    }else{
+        //rpc-api
+        for(let i = nStart; i < nEnd; i++){
+            let item = { height: i, tis: [] };
+
+            let blk_hash = await client.getBlockHash(i);
+            let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
+            let txs = blk_info.tx;
+
+            for(let j = 0; j < txs.length; j++){
+                let ti = await client.getRawTransaction(txs[j], coin_traits.getrawtransaction_verbose_bool ? true : 1);
+                item.tis.push(ti);
+            }
+
+            blk_tis.push(item);
+        }    
+    }
+
+    await process_tis(blk_tis);
+    debug.info(`sync [${nStart}, ${nEnd}) done!`);
+}
 ////////////////////////////////////////////////////////////////
 module.exports = {
     stop: false, //flag to indicate shut down immediately
@@ -389,12 +487,22 @@ module.exports = {
                 await Promise.all([dal.removeCoinsAfterHeight(last_recorded_blocks), dal.removePayloadsAfterHeight(last_recorded_blocks)]);
             }
 
-            for(let i = last_recorded_blocks+1; i <= latest_block; i++){
+            let i = last_recorded_blocks + 1; //start blk# of this batch
+            if((i == 0) && !coin_traits.genesis_tx_connected) i++; //skip genesis block if its tx is not used.
+
+            let j = i + config.batch_blocks; //start blk# of next batch
+            if(j > latest_block) j = latest_block + 1; //last batch
+
+            while(i <= latest_block){
                 if(this.stop) break;
 
-                await sample_block(i);
+                await sample_batch(i, j);
 
-                await dal.setLastRecordedBlockHeight(i);
+                await dal.setLastRecordedBlockHeight(j-1);
+
+                i = j;
+                j = i + config.batch_blocks;                
+                if(j > latest_block) j = latest_block + 1; //last batch
             }
         }
 

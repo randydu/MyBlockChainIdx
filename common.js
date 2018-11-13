@@ -22,7 +22,7 @@ function resolve_config(){
         throw new Error("full node cannot be resolved!");
     
     //override node settings by env
-    node.rpcport = process.env.RPC_PORT || node.rpcport;
+    node.rpcport = +process.env.RPC_PORT || node.rpcport;
     node.rpchost = process.env.RPC_HOST || node.rpchost;
     node.rpcuser = process.env.RPC_USER || node.rpcuser;
     node.rpcpassword = process.env.RPC_PASSWORD || node.rpcpassword;
@@ -37,6 +37,10 @@ function resolve_config(){
     //use REST API?
     config.use_rest_api = +process.env.USE_REST_API;
     if(!coin_traits.REST) config.use_rest_api = 0;
+
+    //Batch Size
+    config.batch_blocks = + process.env.BATCH_BLOCKS || +config.batch_blocks;
+    if(config.batch_blocks < 1) config.batch_blocks = 1;
 }
 
 resolve_config();

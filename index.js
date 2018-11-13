@@ -42,5 +42,7 @@ return Promise.all([sample.init(), dal.init()]).then(()=>{
    return sample_run();
 }).catch(err => {
     console.error(err.message);
+
+    process.exit(-1);
 })
 
