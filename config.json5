@@ -16,6 +16,7 @@
 
             BIP34: true, //https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki
             REST: false, //do not support rest-api
+            MULTISIG: false, //support address type "multisig"
         },
         btc: {
             apis: [],
@@ -31,6 +32,7 @@
             
             BIP34: false, //only support from block #227,836
             REST: true,
+            MULTISIG: true, //support address type "multisig"
         },
         bch: {
             apis: [],
@@ -45,6 +47,7 @@
 
             BIP34: false,
             REST: true,
+            MULTISIG: true, //support address type "multisig"
         },
         ltc: {
             apis: [],
@@ -59,6 +62,7 @@
 
             BIP34: false,
             REST: true,
+            MULTISIG: true, //support address type "multisig"
         }
     },
 

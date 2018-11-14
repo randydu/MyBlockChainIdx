@@ -52,6 +52,7 @@ async function getTransactionInfo(txid){
 async function process_tis(blk_tis){
     let spents = [];
     let coins = [];
+    let coins_multisig = [];
     let payloads = [];
     let errs = [];
     let txids = [];
@@ -192,22 +193,27 @@ async function process_tis(blk_tis){
                         continue;
                         }
 
-                        if(out.scriptPubKey.addresses.length != 1){
-                            throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
-                        }
                         let vCoin = new BigNumber(out.value);
                         vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
 
                         let obj = {
-                            address: out.scriptPubKey.addresses[0],
                             tx_id: txid,
                             pos: j, //the j'th output in the tx
                             value: vCoin.toString(),
                         };
-
                         if(height >= 0) obj.height = height; //pending_xxx does not have height field.
 
-                        coins.push(obj);
+                        if(out.scriptPubKey.addresses.length > 1){ //multisig
+                            if(out.type !== 'multisig' || !coin_traits.MULTISIG)
+                                throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
+
+                            //MULTISIG support
+                            obj.addresses = out.scriptPubKey.addresses;
+                            coins_multisig.push(obj);
+                        }else{
+                            obj.address = out.scriptPubKey.addresses[0];
+                            coins.push(obj);
+                        }
                     }
 
                     if(support_payload && (out.payloadSize > 0)){
@@ -250,6 +256,10 @@ async function process_tis(blk_tis){
             await dal.addCoins(coins);
         }
 
+        if(coins_multisig.length > 0){
+            await dal.addMultiSigCoins(coins_multisig);
+        }
+
         if(spents.length > 0){
             await dal.addSpents(spents);
         }
@@ -264,6 +274,9 @@ async function process_tis(blk_tis){
         if(coins.length > 0){
             await dal.addPendingCoins(coins);
         }
+        if(coins_multisig.length > 0){
+            await dal.addPendingMultiSigCoins(coins_multisig);
+        }
         if(support_payload && (payloads.length > 0)){
             await dal.addPendingPayloads(payloads);
         }
@@ -274,53 +287,6 @@ async function process_tis(blk_tis){
         await dal.addErrors(errs);
     }
 }
-
-async function sample_block(block_no){
-    debug.info(`sampling ${block_no} >>`);
-
-    if(block_no != 0 || coin_traits.genesis_tx_connected){
-        let blk_hash = await client.getBlockHash(block_no);
-
-        if(use_rest_api){
-            return s;
-        }
-        let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
-        debug.trace("%O", blk_info);
-
-        /**
-         * {
-        "hash" : "000000078ffb6946a3f964d39f70f1fe5d1215c40684526a590c1d6ef1682860",
-        "confirmations" : 28153,
-        "size" : 201,
-        "height" : 202,
-        "version" : 2,
-        "merkleroot" : "0b6c93af98836524d909101d31a84e0b63a78af8e755d343c084c6302d26c54c",
-        "time" : 1535106745,
-        "nonce" : 2494895360,
-        "bits" : "1d0a17ff",
-        "difficulty" : 0.09906985,
-        "mint" : 256.00000000,
-        "previousblockhash" : "000000028504c467f5d8bb23cb2e28af7b4b4d2e11261109edae624857d3ffa3",
-        "nextblockhash" : "00000000585cd57b80d92072d5b623616ad49e1b78db1245688d1dc1eb9eeef8",
-        "flags" : "proof-of-work",
-        "proofhash" : "000000078ffb6946a3f964d39f70f1fe5d1215c40684526a590c1d6ef1682860",
-        "entropybit" : 0,
-        "modifier" : "0000000000000000",
-        "modifierchecksum" : "e7903dbd",
-        "tx" : [
-            "0b6c93af98836524d909101d31a84e0b63a78af8e755d343c084c6302d26c54c"
-            ]
-        }
-        */
-        let txs = blk_info.tx;
-        if(txs.length > 0){
-            await process_txs(txs, block_no);
-        }
-    }
-
-    debug.info(`sampling ${block_no} <<`);
-}
-
 
 async function sample_pendings(){
     debug.info('check pendings >>');
@@ -398,7 +364,7 @@ async function sample_batch(nStart, nEnd /* exclude */){
 
             blk_tis.push({
                 height: i,
-                tis: blk_info.tx
+                tis: blk_info.tx //tx_info already populated by REST-api
             });
         }
         start_blk_hash = hdrs[nEnd-nStart-1].nextblockhash;
@@ -409,6 +375,31 @@ async function sample_batch(nStart, nEnd /* exclude */){
 
             let blk_hash = await client.getBlockHash(i);
             let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
+            /**
+             * {
+            "hash" : "000000078ffb6946a3f964d39f70f1fe5d1215c40684526a590c1d6ef1682860",
+            "confirmations" : 28153,
+            "size" : 201,
+            "height" : 202,
+            "version" : 2,
+            "merkleroot" : "0b6c93af98836524d909101d31a84e0b63a78af8e755d343c084c6302d26c54c",
+            "time" : 1535106745,
+            "nonce" : 2494895360,
+            "bits" : "1d0a17ff",
+            "difficulty" : 0.09906985,
+            "mint" : 256.00000000,
+            "previousblockhash" : "000000028504c467f5d8bb23cb2e28af7b4b4d2e11261109edae624857d3ffa3",
+            "nextblockhash" : "00000000585cd57b80d92072d5b623616ad49e1b78db1245688d1dc1eb9eeef8",
+            "flags" : "proof-of-work",
+            "proofhash" : "000000078ffb6946a3f964d39f70f1fe5d1215c40684526a590c1d6ef1682860",
+            "entropybit" : 0,
+            "modifier" : "0000000000000000",
+            "modifierchecksum" : "e7903dbd",
+            "tx" : [
+                "0b6c93af98836524d909101d31a84e0b63a78af8e755d343c084c6302d26c54c"
+                ]
+            }
+            */
             let txs = blk_info.tx;
 
             for(let j = 0; j < txs.length; j++){

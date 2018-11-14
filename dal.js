@@ -18,6 +18,11 @@ async function getNextCoinId(){
     return r == null ? 1 : r._id + 1;
 }
 
+async function getNextMultiSigCoinId(){
+    let r = await database.collection("coins_multisig").find().sort({_id: -1}).limit(1).next();
+    return r == null ? 1 : r._id + 1;
+}
+
 module.exports = {
     async init(){
         debug.info("dal.init >>");
@@ -28,23 +33,33 @@ module.exports = {
         database = client.db('myidx');
 
         const support_payload = config.coin_traits.payload;
+        const support_multisig = config.coin_traits.MULTISIG;
 
         await Promise.all([
             database.createCollection("coins"),
+            support_multisig ? database.createCollection("coins_multisig") : Promise.resolve(),
             database.createCollection("pending_spents"),
             database.createCollection("pending_coins"),
+            support_multisig ? database.createCollection("pending_coins_multisig") : Promise.resolve(),
             database.createCollection("rejects"),
 
             support_payload ? database.createCollection("payloads") : Promise.resolve(),
             support_payload ? database.createCollection("pending_payloads") : Promise.resolve(),
+            
         ]);
 
         await Promise.all([
             database.collection('coins').createIndexes([
                 { key: {address: 1}, name: "idx_addr" }, 
                 { key: {height: 1}, name: "idx_height" }, 
-                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: config.coin_traits.BIP34 },
+                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: config.coin_traits.BIP34 },//multiple (tx_id,pos) in coinbase pre-BIP34
             ]), 
+
+            support_multisig ? database.collection('coins_multisig').createIndexes([
+                { key: {addresses: 1}, name: "idx_addr" }, 
+                { key: {height: 1}, name: "idx_height" }, 
+                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
+            ]) : Promise.resolve(), 
 
             support_payload ? database.collection('payloads').createIndexes([
                 { key: { address: 1, hint: 1, subhint:1 }, name: "idx_addr_hint" }, 
@@ -60,6 +75,12 @@ module.exports = {
                 { key: { address: 1 }, name: "idx_addr" }, 
                 { key: {tx_id: 1}, name: "idx_tx" } 
             ]),
+            
+            support_multisig ?
+                database.collection('pending_coins_multisig').createIndexes([
+                    { key: { addresses: 1 }, name: "idx_addr" }, 
+                    { key: {tx_id: 1}, name: "idx_tx" } 
+                ]) : Promise.resolve(),
             
             support_payload ? database.collection('pending_payloads').createIndexes([
                 { key: {address: 1}, name: "idx_addr" }, 
@@ -116,6 +137,14 @@ module.exports = {
         return database.collection("coins").insertMany(coins);
     },
 
+    async addMultiSigCoins(coins){
+        let N = await getNextMultiSigCoinId();
+        coins.forEach(x => x._id = N++);
+
+        return database.collection("coins_multisig").insertMany(coins);
+    },
+
+
     async addPayloads(payloads){
         let N = await database.collection("payloads").countDocuments({}) + 1;
         payloads.forEach(x => x._id = N++);
@@ -123,11 +152,17 @@ module.exports = {
     },
 
     async addSpents(spents){
-        return database.collection("coins").bulkWrite( spents.map(spent => {
+        let ops = spents.map(spent => {
             return {
                 deleteOne: { "filter": {"tx_id": spent.spent_tx_id, "pos": spent.pos}}
             }
-        }), { ordered: false });
+        });
+
+        await database.collection("coins").bulkWrite( ops, { ordered: false });
+
+        if(config.coin_traits.MULTISIG){
+            await database.collection("coins_multisig").bulkWrite( ops, { ordered: false });
+        }
         /*
         return Promise.all(spents.map(spent => {
             //BIP34: the first coin (tx_id, pos) is spent. 
@@ -147,30 +182,29 @@ module.exports = {
     async addPendingCoins(coins){
         return database.collection("pending_coins").insertMany(coins);
     },
+    async addPendingMultiSigCoins(coins){
+        return database.collection("pending_coins_multisig").insertMany(coins);
+    },
 
     async addPendingPayloads(payloads){
         return database.collection("pending_payloads").insertMany(payloads);
     },
 
     async removePendingTransactions(txids){
+        let ops = txids.map(txid => {
+            return {
+                deleteMany: { "filter": { "tx_id": { $eq: txid } }}
+            }
+        });
+
         return Promise.all([
-            database.collection("pending_coins").bulkWrite(txids.map(txid => {
-                return {
-                    deleteMany: { "filter": { "tx_id": { $eq: txid } }}
-                }
-            }), { ordered: false} ),
+            database.collection("pending_coins").bulkWrite(ops, { ordered: false} ), 
 
-            database.collection("pending_payloads").bulkWrite(txids.map(txid => {
-                return {
-                    deleteMany: { "filter": { "tx_id": { $eq: txid } }}
-                }
-            }), { ordered: false} ),
+            config.coin_traits.MULTISIG ? 
+                database.collection("pending_coins_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
 
-            database.collection("pending_spents").bulkWrite(txids.map(txid => {
-                return {
-                    deleteMany: { "filter": { "tx_id": { $eq: txid } }}
-                }
-            }), { ordered: false} ),
+            database.collection("pending_payloads").bulkWrite( ops, { ordered: false} ),
+            database.collection("pending_spents").bulkWrite(ops, { ordered: false} ),
         ]);
         
         /*
@@ -194,8 +228,17 @@ module.exports = {
                 if(!rejects.has(sp.tx_id)){
                     return database.collection("coins").countDocuments({tx_id: {$eq: sp.spent_tx_id}, pos: {$eq: sp.pos}}).then(count => {
                         if(count == 0){
-                            //spent missing, must have been consumed by another transaction on blockchain!
-                            rejects.add(sp.tx_id);
+                            if(config.coin_traits.MULTISIG){
+                                return database.collection("coins_multisig").countDocuments({tx_id: {$eq: sp.spent_tx_id}, pos: {$eq: sp.pos}}).then(count => {
+                                    if(count == 0){
+                                        //spent missing, must have been consumed by another transaction on blockchain!
+                                        rejects.add(sp.tx_id);
+                                    }
+                                });
+                            }else{
+                                //spent missing, must have been consumed by another transaction on blockchain!
+                                rejects.add(sp.tx_id);
+                            }
                         }
                     })
                 }
