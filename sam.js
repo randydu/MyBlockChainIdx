@@ -204,7 +204,7 @@ async function process_tis(blk_tis){
                         if(height >= 0) obj.height = height; //pending_xxx does not have height field.
 
                         if(out.scriptPubKey.addresses.length > 1){ //multisig
-                            if(out.type !== 'multisig' || !coin_traits.MULTISIG)
+                            if(out.scriptPubKey.type !== 'multisig' || !coin_traits.MULTISIG)
                                 throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
 
                             //MULTISIG support
