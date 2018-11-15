@@ -253,7 +253,7 @@ module.exports = {
 
                 rejects.clear();
             }
-            delete rejects;
+            rejects = null;
         }
     }
 }
