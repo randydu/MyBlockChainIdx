@@ -286,6 +286,14 @@ async function process_tis(blk_tis){
     if(errs.length > 0){
         await dal.addErrors(errs);
     }
+
+    //manually release memory
+    spents.length = 0;
+    coins.length = 0;
+    coins_multisig.length = 0;
+    payloads.length = 0;
+    errs.length = 0;
+    txids.length = 0;
 }
 
 async function sample_pendings(){
@@ -412,6 +420,10 @@ async function sample_batch(nStart, nEnd /* exclude */){
     }
 
     await process_tis(blk_tis);
+
+    blk_tis.forEach(x => { x.tis.length = 0; });
+    blk_tis.length = 0;
+
     debug.info(`sync [${nStart}, ${nEnd}) done!`);
 }
 ////////////////////////////////////////////////////////////////
@@ -458,7 +470,6 @@ module.exports = {
         }
 
         if(!ready) throw new Error('full node not found, abort!');
-
 
         debug.trace('sam.init << ');
     },

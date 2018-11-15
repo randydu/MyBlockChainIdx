@@ -246,11 +246,14 @@ module.exports = {
 
             if(rejects.size > 0){
                 let txids = Array.from(rejects);
-                return Promise.all([
+                await Promise.all([
                     database.collection("rejects").insertMany(txids.map(x => {tx_id: x})),
                     this.removePendingTransactions(txids)
                 ])
+
+                rejects.clear();
             }
+            delete rejects;
         }
     }
 }
