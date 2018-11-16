@@ -23,7 +23,7 @@ async function getNextCoinIdInt32(){
 
 async function getNextCoinIdLong(){
     let r = await database.collection("coins").find().sort({_id: -1}).limit(1).next();
-    return r == null ? Long.fromInt(1) : Long.fromNumber(r._id).add(LONG_ONE);
+    return r == null ? LONG_ONE : Long.fromNumber(r._id).add(LONG_ONE);
 }
 
 async function getNextMultiSigCoinId(){
@@ -33,7 +33,7 @@ async function getNextMultiSigCoinId(){
 
 async function getNextPayloadIdLong(){
     let r = await database.collection("payloads").find().sort({_id: -1}).limit(1).next();
-    return r == null ? Long.fromInt(1) : Long.fromNumber(r._id).add(LONG_ONE);
+    return r == null ? LONG_ONE : Long.fromNumber(r._id).add(LONG_ONE);
 }
 
 module.exports = {
@@ -145,12 +145,7 @@ module.exports = {
 
     async addCoins(coins){
         let N = await getNextCoinIdLong();
-        //coins.forEach(x=> { x._id = N; N = N.add(1); });
-        coins.forEach(x=> { 
-            x._id = N; 
-            N = N.add(LONG_ONE); 
-        });
-
+        coins.forEach(x=> { x._id = N; N = N.add(LONG_ONE); });
         return database.collection("coins").insertMany(coins);
     },
 
