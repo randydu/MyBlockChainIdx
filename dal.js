@@ -7,20 +7,36 @@
 const common = require('./common');
 const debug = common.create_debug('dal');
 const config = common.config;
+const dbg_throw_error = common.dbg_throw_error(debug);
 
 const Long = require('mongodb').Long;
+const LONG_ONE = Long.fromInt(1);
+
 const MongoClient = require('mongodb').MongoClient;
 var client = null;
 var database = null; 
 
-const LONG_ONE = Long.fromInt(1);
-/* deprecated.
+
+async function setLastValue(key, v){
+    await database.collection("summary").findOneAndUpdate(
+        { _id: key }, 
+        {$set: {value: v}},
+        { upsert: true }
+    );
+}
+
+async function getLastValue(key){
+    let r = await database.collection("summary").findOne({ _id: key });
+    return r == null ? -1 : r.value;
+}
+
+
+/* deprecated. (DB_VERSION_V1)
 async function getNextCoinIdInt32(){
     let r = await database.collection("coins").find().sort({_id: -1}).limit(1).next();
     return r == null ? 1 : r._id + 1;
 }
 */
-
 async function getNextCoinIdLong(){
     let r = await database.collection("coins").find().sort({_id: -1}).limit(1).next();
     return r == null ? LONG_ONE : Long.fromNumber(r._id).add(LONG_ONE);
@@ -36,74 +52,97 @@ async function getNextPayloadIdLong(){
     return r == null ? LONG_ONE : Long.fromNumber(r._id).add(LONG_ONE);
 }
 
+const DB_VERSION_V1 = 1; //int32-indexed "coins" & "payloads" collections
+const DB_VERSION_V2 = 2; //6432-indexed "coins" & "payloads" collections
+const LATEST_DB_VERSION = DB_VERSION_V2;
+
 module.exports = {
-    async init(){
+
+    async init(do_upgrade = false){
         debug.info("dal.init >>");
 
         let mongodb_url = process.env.MONGODB_URL;
         debug.info("MONGODB_URL=%s", mongodb_url);
+        
         client = await MongoClient.connect(mongodb_url, { useNewUrlParser: true });
+        if(!client.isConnected()){
+            dbg_throw_error("database not connected!");
+        }
+
         database = client.db('myidx');
 
         const support_payload = config.coin_traits.payload;
         const support_multisig = config.coin_traits.MULTISIG;
 
-        await Promise.all([
-            database.createCollection("coins"),
-            support_multisig ? database.createCollection("coins_multisig") : Promise.resolve(),
-            database.createCollection("pending_spents"),
-            database.createCollection("pending_coins"),
-            support_multisig ? database.createCollection("pending_coins_multisig") : Promise.resolve(),
-            database.createCollection("rejects"),
+        if(!do_upgrade){
+            let lastBlockHeight = await this.getLastRecordedBlockHeight();
+            if(lastBlockHeight >= 0){
+                let ver = await this.getDBVersion();
+                if(ver != LATEST_DB_VERSION){
+                    //database version mismatch
+                    dbg_throw_error(`Database version mismatch, the version expected: [${LATEST_DB_VERSION}] db_version: [${ver}], need to run upgrade once!`);
+                }
+            }
 
-            support_payload ? database.createCollection("payloads") : Promise.resolve(),
-            support_payload ? database.createCollection("pending_payloads") : Promise.resolve(),
-            
-        ]);
+            await Promise.all([
+                database.createCollection("coins"),
+                support_multisig ? database.createCollection("coins_multisig") : Promise.resolve(),
+                database.createCollection("pending_spents"),
+                database.createCollection("pending_coins"),
+                support_multisig ? database.createCollection("pending_coins_multisig") : Promise.resolve(),
+                database.createCollection("rejects"),
 
-        await Promise.all([
-            database.collection('coins').createIndexes([
-                { key: {address: 1}, name: "idx_addr" }, 
-                { key: {height: 1}, name: "idx_height" }, 
-                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: config.coin_traits.BIP34 },//multiple (tx_id,pos) in coinbase pre-BIP34
-            ]), 
+                support_payload ? database.createCollection("payloads") : Promise.resolve(),
+                support_payload ? database.createCollection("pending_payloads") : Promise.resolve(),
+                
+            ]);
 
-            support_multisig ? database.collection('coins_multisig').createIndexes([
-                { key: {addresses: 1}, name: "idx_addr" }, 
-                { key: {height: 1}, name: "idx_height" }, 
-                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
-            ]) : Promise.resolve(), 
+            await Promise.all([
+                database.collection('coins').createIndexes([
+                    { key: {address: 1}, name: "idx_addr" }, 
+                    { key: {height: 1}, name: "idx_height" }, 
+                    { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: config.coin_traits.BIP34 },//multiple (tx_id,pos) in coinbase pre-BIP34
+                ]), 
 
-            support_payload ? database.collection('payloads').createIndexes([
-                { key: { address: 1, hint: 1, subhint:1 }, name: "idx_addr_hint" }, 
-                { key: {height: 1}, name: "idx_height" }, 
-                { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true },
-            ]) : Promise.resolve(),
+                support_multisig ? database.collection('coins_multisig').createIndexes([
+                    { key: {addresses: 1}, name: "idx_addr" }, 
+                    { key: {height: 1}, name: "idx_height" }, 
+                    { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
+                ]) : Promise.resolve(), 
 
-            database.collection('pending_spents').createIndexes([
-                { key: { address: 1 }, name: "idx_addr" }, 
-                { key: {tx_id: 1}, name: "idx_tx" } 
-            ]),
-            database.collection('pending_coins').createIndexes([
-                { key: { address: 1 }, name: "idx_addr" }, 
-                { key: {tx_id: 1}, name: "idx_tx" } 
-            ]),
-            
-            support_multisig ?
-                database.collection('pending_coins_multisig').createIndexes([
-                    { key: { addresses: 1 }, name: "idx_addr" }, 
-                    { key: {tx_id: 1}, name: "idx_tx" } 
+                support_payload ? database.collection('payloads').createIndexes([
+                    { key: { address: 1, hint: 1, subhint:1 }, name: "idx_addr_hint" }, 
+                    { key: {height: 1}, name: "idx_height" }, 
+                    { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true },
                 ]) : Promise.resolve(),
-            
-            support_payload ? database.collection('pending_payloads').createIndexes([
-                { key: {address: 1}, name: "idx_addr" }, 
-                { key: {tx_id: 1}, name: "idx_tx"}
-            ]): Promise.resolve(),
 
-            database.collection('rejects').createIndexes([
-                { key: { tx_id: 1 }, name: "idx_tx", unique: true }
-            ])
-        ]);
+                database.collection('pending_spents').createIndexes([
+                    { key: { address: 1 }, name: "idx_addr" }, 
+                    { key: {tx_id: 1}, name: "idx_tx" } 
+                ]),
+                database.collection('pending_coins').createIndexes([
+                    { key: { address: 1 }, name: "idx_addr" }, 
+                    { key: {tx_id: 1}, name: "idx_tx" } 
+                ]),
+                
+                support_multisig ?
+                    database.collection('pending_coins_multisig').createIndexes([
+                        { key: { addresses: 1 }, name: "idx_addr" }, 
+                        { key: {tx_id: 1}, name: "idx_tx" } 
+                    ]) : Promise.resolve(),
+                
+                support_payload ? database.collection('pending_payloads').createIndexes([
+                    { key: {address: 1}, name: "idx_addr" }, 
+                    { key: {tx_id: 1}, name: "idx_tx"}
+                ]): Promise.resolve(),
+
+                database.collection('rejects').createIndexes([
+                    { key: { tx_id: 1 }, name: "idx_tx", unique: true }
+                ])
+            ]);
+
+            await this.setDBVersion(LATEST_DB_VERSION);
+        }
 
         debug.info("dal.init <<");
     },
@@ -112,24 +151,25 @@ module.exports = {
         if(client) await client.close();
     },
 
-    async setLastValue(key, v){
-        return database.collection("summary").findOneAndUpdate(
-            { _id: key }, 
-            {$set: {value: v}},
-            { upsert: true }
-        );
-    },
-    async getLastValue(key){
-        let r = await database.collection("summary").findOne({ _id: key });
-        return r == null ? -1 : r.value;
+    //The current db version supported.
+    getLatestDBVersion(){
+        return LATEST_DB_VERSION;
     },
 
+    async getDBVersion(){
+        let v = await getLastValue("db_version");
+        return v < 0 ? 1 : v;
+    },
+
+    async setDBVersion(db_ver){
+        await setLastValue("db_version", db_ver);
+    },
+    
     async getLastRecordedBlockHeight(){
-        return this.getLastValue('lastBlockHeight');
-
+        return await getLastValue('lastBlockHeight');
     },
     async setLastRecordedBlockHeight(height){
-        return this.setLastValue('lastBlockHeight', height);
+        await setLastValue('lastBlockHeight', height);
     },
 
     async addErrors(errs){
@@ -267,5 +307,6 @@ module.exports = {
             }
             rejects = null;
         }
-    }
+    },
+
 }
