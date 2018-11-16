@@ -8,19 +8,32 @@ const common = require('./common');
 const debug = common.create_debug('dal');
 const config = common.config;
 
-
+const Long = require('mongodb').Long;
 const MongoClient = require('mongodb').MongoClient;
 var client = null;
 var database = null; 
 
-async function getNextCoinId(){
+const LONG_ONE = Long.fromInt(1);
+/* deprecated.
+async function getNextCoinIdInt32(){
     let r = await database.collection("coins").find().sort({_id: -1}).limit(1).next();
     return r == null ? 1 : r._id + 1;
+}
+*/
+
+async function getNextCoinIdLong(){
+    let r = await database.collection("coins").find().sort({_id: -1}).limit(1).next();
+    return r == null ? Long.fromInt(1) : Long.fromNumber(r._id).add(LONG_ONE);
 }
 
 async function getNextMultiSigCoinId(){
     let r = await database.collection("coins_multisig").find().sort({_id: -1}).limit(1).next();
     return r == null ? 1 : r._id + 1;
+}
+
+async function getNextPayloadIdLong(){
+    let r = await database.collection("payloads").find().sort({_id: -1}).limit(1).next();
+    return r == null ? Long.fromInt(1) : Long.fromNumber(r._id).add(LONG_ONE);
 }
 
 module.exports = {
@@ -131,8 +144,12 @@ module.exports = {
     },
 
     async addCoins(coins){
-        let N = await getNextCoinId();
-        coins.forEach(x => x._id = N++);
+        let N = await getNextCoinIdLong();
+        //coins.forEach(x=> { x._id = N; N = N.add(1); });
+        coins.forEach(x=> { 
+            x._id = N; 
+            N = N.add(LONG_ONE); 
+        });
 
         return database.collection("coins").insertMany(coins);
     },
@@ -144,10 +161,10 @@ module.exports = {
         return database.collection("coins_multisig").insertMany(coins);
     },
 
-
     async addPayloads(payloads){
-        let N = await database.collection("payloads").countDocuments({}) + 1;
-        payloads.forEach(x => x._id = N++);
+        //let N = await database.collection("payloads").countDocuments({}) + 1;
+        let N = await getNextPayloadIdLong();
+        payloads.forEach(x => { x._id = N; N = N.add(LONG_ONE); });
         return database.collection("payloads").insertMany(payloads);
     },
 
