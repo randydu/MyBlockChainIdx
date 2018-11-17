@@ -41,6 +41,10 @@ function resolve_config(){
     //Batch Size
     config.batch_blocks = + process.env.BATCH_BLOCKS || +config.batch_blocks;
     if(config.batch_blocks < 1) config.batch_blocks = 1;
+
+    //Batch upgrade size
+    config.batch_upgradeV1toV2 = + process.env.BATCH_UPGRADEV1TOV2 || 100;
+    if(config.batch_upgradeV1toV2 < 1) config.batch_upgradeV1toV2 = 100;
 }
 
 resolve_config();

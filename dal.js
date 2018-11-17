@@ -16,6 +16,8 @@ const MongoClient = require('mongodb').MongoClient;
 var client = null;
 var database = null; 
 
+var stopping = false; //user stop
+
 
 async function setLastValue(key, v){
     await database.collection("summary").findOneAndUpdate(
@@ -30,6 +32,9 @@ async function getLastValue(key){
     return r == null ? -1 : r.value;
 }
 
+async function deleteLastValue(key){
+    await database.collection('summary').deleteOne({_id: key});
+}
 
 /* deprecated. (DB_VERSION_V1)
 async function getNextCoinIdInt32(){
@@ -147,6 +152,10 @@ module.exports = {
         debug.info("dal.init <<");
     },
 
+    stop(){
+        stopping = true;
+    },
+
     async close(){
         if(client) await client.close();
     },
@@ -245,7 +254,7 @@ module.exports = {
     async removePendingTransactions(txids){
         let ops = txids.map(txid => {
             return {
-                deleteMany: { "filter": { "tx_id": { $eq: txid } }}
+                deleteMany: { "filter": { "tx_id":  txid }}
             }
         });
 
@@ -308,5 +317,74 @@ module.exports = {
             rejects = null;
         }
     },
+    //-------------- V1 => V2 ---------------
+    async upgradeV1toV2(dbg){
+        //check if coin_v1 already exists, in case we may pick up from previous incomplete upgrading.
+        let has_coins_v1 = (await database.collections()).some(x => x.collectionName == 'coins_v1');
 
+        if(!has_coins_v1){
+            dbg.info('fresh new upgrade...');
+            await database.collection('coins').rename('coins_v1');
+        }
+
+        await database.createCollection("coins");
+        await database.collection('coins').createIndexes([
+            { key: {address: 1}, name: "idx_addr" }, 
+            { key: {height: 1}, name: "idx_height" }, 
+            { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: config.coin_traits.BIP34 },//multiple (tx_id,pos) in coinbase pre-BIP34
+        ]);
+
+        const last_upgrade_item = 'last_upgrade_item';
+
+        dbg.info('Counting total items to upgrade...');
+        let tbCoinsV1 = database.collection('coins_v1');
+        let N = await tbCoinsV1.countDocuments({});
+        dbg.info(`Total ${N} items to upgrade!`);
+
+        if(N > 0){
+            let tbCoins = database.collection('coins');
+
+            let i = await getLastValue(last_upgrade_item);
+            if(i >= 0){
+                i++; //start of next batch
+                //clean up all *dirty* items in target table
+                await tbCoins.deleteMany({_id: {$gte: Long.fromInt(i)}});
+            }else{
+                i = 0;
+            } 
+
+            let j = i + config.batch_upgradeV1toV2;
+            if(j > N) j = N;
+
+            while(i < N) {
+                if(stopping) break;
+
+                dbg.info(`upgrading [${i}, ${j})...`);
+
+                let items = await tbCoinsV1.find().sort({_id: 1}).skip(i).limit(j-i).toArray();
+                items.forEach(x => { x._id = Long.fromInt(x._id) });
+                await tbCoins.insertMany(items);
+
+                await setLastValue(last_upgrade_item,j-1);
+
+                i = j;
+                if( i < N){
+                    j += config.batch_upgradeV1toV2;
+                    if(j > N) j = N;
+                }
+            }
+
+            let M = await getLastValue(last_upgrade_item);
+            if( M == N-1){
+                dbg.info("Upgrade Successfully! (FAKE)");
+                return; 
+                //complete upgrade
+                await tbCoinsV1.drop();
+                await deleteLastValue(last_upgrade_item);
+                await this.setDBVersion(LATEST_DB_VERSION);
+
+                dbg.info("Upgrade Successfully!");
+            }
+        }
+    }
 }

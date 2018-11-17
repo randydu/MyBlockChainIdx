@@ -15,7 +15,17 @@ const config = common.config;
 
 const dal = require('./dal');
 
- 
+async function handle(signal){
+    console.log(`signal: ${signal}`);
+
+    console.log('shutdown ...');
+    dal.stop();
+
+    await common.delay(5000);
+    await dal.close();
+    console.log('shutdown done!');
+    process.exit(-1);
+}
  //--------------------------
 async function run(){
     await dal.init(true);
@@ -24,12 +34,16 @@ async function run(){
     let my_ver = dal.getLatestDBVersion();
     if(old_ver == my_ver){
         console.log("database version matched, no need to upgrade.");
-        await dal.close();
-
         return;
     }
 
+    if((old_ver == 1) && (my_ver == 2)){
+        await dal.upgradeV1toV2(debug);
+    }
 }
+
+process.on('SIGINT', handle);
+process.on('SIGTERM', handle);
 
 return run().then(()=>{
     console.log("done!");
@@ -37,6 +51,7 @@ return run().then(()=>{
 
 //    debug.info("%O", process._getActiveRequests());
 //    debug.info("%O", process._getActiveHandles());
+    return dal.close();
 }).catch(err => {
     console.log(err.message);
 
