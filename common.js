@@ -91,6 +91,6 @@ module.exports = {
     make_serial,
     add_apis,
     dbg_throw_error(dbg){
-        return throw_error.bind(dbg);
+        return throw_error.bind(this,dbg);
     }
 }
