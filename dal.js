@@ -188,6 +188,9 @@ module.exports = {
     async removeCoinsAfterHeight(height){
         return database.collection("coins").deleteMany({ height: { $gt: height } });
     },
+    async removeMultiSigCoinsAfterHeight(height){
+        return database.collection("coins_multisig").deleteMany({ height: { $gt: height } });
+    },
     async removePayloadsAfterHeight(height){
         return database.collection("payloads").deleteMany({ height: { $gt: height } });
     },

@@ -487,7 +487,11 @@ module.exports = {
         if(latest_block > last_recorded_blocks){
             if(first_time_check_blocks){
                 first_time_check_blocks = false;
-                await Promise.all([dal.removeCoinsAfterHeight(last_recorded_blocks), dal.removePayloadsAfterHeight(last_recorded_blocks)]);
+                await Promise.all([
+                    dal.removeCoinsAfterHeight(last_recorded_blocks), 
+                    coin_traits.MULTISIG ? dal.removeMultiSigCoinsAfterHeight(last_recorded_blocks): Promise.resolve(),
+                    dal.removePayloadsAfterHeight(last_recorded_blocks),
+                ]);
             }
 
             let i = last_recorded_blocks + 1; //start blk# of this batch
