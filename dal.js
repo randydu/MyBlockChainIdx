@@ -347,11 +347,14 @@ module.exports = {
             let i = await getLastValue(last_upgrade_item);
             if(i >= 0){
                 i++; //start of next batch
-                //clean up all *dirty* items in target table
-                await tbCoins.deleteMany({_id: {$gte: Long.fromInt(i)}});
             }else{
                 i = 0;
             } 
+            if(i < N){
+                dbg.info(`delete all *dirty* items in target table from item[${i}]...`);
+                let item = await tbCoinsV1.find().sort({_id:1}).skip(i).next();
+                await tbCoins.deleteMany({_id: {$gte: Long.fromInt(item._id)}});
+            }
 
             let j = i + config.batch_upgradeV1toV2;
             if(j > N) j = N;
