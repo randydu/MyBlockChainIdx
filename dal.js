@@ -379,8 +379,8 @@ module.exports = {
 
             let M = await getLastValue(last_upgrade_item);
             if( M == N-1){
-                dbg.info("Upgrade Successfully! (FAKE)");
-                return; 
+                //dbg.info("Upgrade Successfully! (FAKE)");
+                //return; 
                 //complete upgrade
                 await tbCoinsV1.drop();
                 await deleteLastValue(last_upgrade_item);
