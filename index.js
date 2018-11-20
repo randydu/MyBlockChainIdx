@@ -30,10 +30,13 @@ const sample_interval = +process.env.SAMPLE_INTERVAL || 1000;
 console.log(`Sampling interval = ${sample_interval}`);
 
 function sample_run(){
-    if(quit) return;
+    if(quit) return Promise.resolve(-1);
 
     return sample.run().then(r => {
-        setTimeout(sample_run, sample_interval);
+        if(quit) return Promise.resolve(-1);
+        
+        return common.delay(sample_interval).then(sample_run);
+        //setTimeout(sample_run, sample_interval);
     })
 }
 
