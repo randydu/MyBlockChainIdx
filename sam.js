@@ -158,14 +158,20 @@ async function process_tis(blk_tis){
                                     throw new Error(msg);
                                 }
                                 let out = tx_spent.vout[spent.vout];
-                                if(out.scriptPubKey.addresses.length != 1){
-                                    let msg = `Spent UTXO with zero or multiple addresses not supported! txid [${spent.txid}] pos [${spent.pos}]`;
-                                    debug.fatal(msg);
-                                    throw new Error(msg);
+                                if(typeof out.scriptPubKey.addresses === 'undefined'){
+                                    debug.warn(`spending non-standard coins (no address), ignored!`);
+                                    continue;
+                                }else{
+                                    if(out.scriptPubKey.addresses.length != 1){
+                                        let msg = `Spent UTXO with zero or multiple addresses not supported! txid [${spent.txid}] pos [${spent.pos}]`;
+                                        debug.warn(msg);
+                                        continue;
+                                    }
+
+                                    obj.address = out.scriptPubKey.addresses[0];
+                                    let vCoin = new BigNumber(out.value); 
+                                    obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
                                 }
-                                obj.address = out.scriptPubKey.addresses[0];
-                                let vCoin = new BigNumber(out.value); 
-                                obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
                             }
 
                             spents.push(obj);
@@ -180,14 +186,14 @@ async function process_tis(blk_tis){
                     let out = outs[j];
                     if(out.value > 0){//only save non-zero utxo
                         if(typeof out.scriptPubKey.addresses === 'undefined'){
-                        errs.push({
-                            tx_id: txid,
-                            height: height,
-                            pos: j,
-                            message: `non-standard coin detected, no address defined.`,
-                            tx_info: tx_info
-                        });
-                        continue;
+                            errs.push({
+                                tx_id: txid,
+                                height: height,
+                                pos: j,
+                                message: `non-standard coin detected, no address defined.`,
+                                tx_info: tx_info
+                            });
+                            continue;
                         }
 
                         let vCoin = new BigNumber(out.value);
@@ -374,7 +380,7 @@ async function sample_batch(nStart, nEnd /* exclude */) {
             });
         }
         start_blk_hash = hdrs[nEnd-nStart-1].nextblockhash;
-        end_blk_hash = hdrs[nEnd-nStart-1].blockhash;
+        end_blk_hash = hdrs[nEnd-nStart-1].hash;
     }else{
         //rpc-api
         for(let i = nStart; i < nEnd; i++){
@@ -505,7 +511,7 @@ module.exports = {
 
         if(last_recorded_bi != null){
             let blk_hash = await client.getBlockHash(last_recorded_blocks);
-            if(blk_hash != last_recorded_bi.hash){
+            if((last_recorded_bi.hash != null) && (blk_hash != last_recorded_bi.hash)){
                 dbg_throw_error(`last blockhash mismatch! block# ${last_recorded_blocks}`);
             }
         }
