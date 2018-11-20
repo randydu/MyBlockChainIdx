@@ -20,7 +20,7 @@
             MULTISIG: false, //support address type "multisig"
         },
         btc: {
-            apis: [],
+            apis: ["getrawmempool"],
             SAT_PER_COIN: 100000000,
 
             payload: false,
@@ -36,7 +36,7 @@
             MULTISIG: true, //support address type "multisig"
         },
         bch: {
-            apis: [],
+            apis: ["getrawmempool"],
             SAT_PER_COIN: 100000000,
 
             payload: false,
@@ -51,7 +51,7 @@
             MULTISIG: true, //support address type "multisig"
         },
         ltc: {
-            apis: [],
+            apis: ["getrawmempool"],
             SAT_PER_COIN: 100000000,
 
             payload: false,
