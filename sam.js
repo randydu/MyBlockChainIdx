@@ -5,8 +5,9 @@ const common = require('./common');
 const BigNumber = require('bignumber.js');
 
 const debug = common.create_debug('sam');
-const config = common.config;
+const dbg_throw_error = common.dbg_throw_error(debug);
 
+const config = common.config;
 const node = config.node;
 const coin_traits = config.coin_traits;
 const support_payload = coin_traits.payload;
@@ -27,10 +28,6 @@ var first_time_save_pendings = true;
 
 var first_time_check_blocks = true;
 ////////////////////////////////////////////////////////////////
-function throw_error(msg){
-    debug.err(msg);
-    throw new Error(msg);
-}
 
 async function getLatestBlockCount(){
     if(use_rest_api){
@@ -205,7 +202,7 @@ async function process_tis(blk_tis){
 
                         if(out.scriptPubKey.addresses.length > 1){ //multisig
                             if(out.scriptPubKey.type !== 'multisig' || !coin_traits.MULTISIG)
-                                throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
+                                dbg_throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
 
                             //MULTISIG support
                             obj.addresses = out.scriptPubKey.addresses;
@@ -317,7 +314,7 @@ async function sample_pendings(){
                 let txid = new_txids[i];
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){
-                    throw_error(`transaction [${txid}]  not found!`);
+                    dbg_throw_error(`transaction [${txid}]  not found!`);
                 }
                 tis.push(ti);
             };
@@ -346,13 +343,14 @@ async function check_rejection(){
 }
 
 let start_blk_hash = null; //rest-only
+let end_blk_hash = null; //last recorded block hash
 
 /**
  * nStart: block_hash(nStart) == start_blk_hash; (REST)
  * nEnd: next start of batch
  */
 
-async function sample_batch(nStart, nEnd /* exclude */){
+async function sample_batch(nStart, nEnd /* exclude */) {
     let blk_tis = [];
 
     debug.info(`sync [${nStart}, ${nEnd})...`);
@@ -367,7 +365,7 @@ async function sample_batch(nStart, nEnd /* exclude */){
             let blk_info = await client.getBlockByHash(hdrs[i-nStart].hash);
 
             if(blk_info.height != i){
-                throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
+                dbg_throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
             }
 
             blk_tis.push({
@@ -376,12 +374,17 @@ async function sample_batch(nStart, nEnd /* exclude */){
             });
         }
         start_blk_hash = hdrs[nEnd-nStart-1].nextblockhash;
+        end_blk_hash = hdrs[nEnd-nStart-1].blockhash;
     }else{
         //rpc-api
         for(let i = nStart; i < nEnd; i++){
             let item = { height: i, tis: [] };
 
             let blk_hash = await client.getBlockHash(i);
+            if(i == nEnd-1){
+                end_blk_hash = blk_hash;
+            }
+
             let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
             /**
              * {
@@ -471,6 +474,11 @@ module.exports = {
 
         if(!ready) throw new Error('full node not found, abort!');
 
+        await dal.setCoinInfo({
+            coin: node.coin,
+            network: node.network
+        })
+
         debug.trace('sam.init << ');
     },
 
@@ -478,11 +486,29 @@ module.exports = {
         debug.info('sam.run >> ');
 
         let latest_block = await getLatestBlockCount();
-
         debug.info(`latest block: ${latest_block}`);
 
-        let last_recorded_blocks = await dal.getLastRecordedBlockHeight();
+        //detect if the last recorded block is a valid one
+        let last_recorded_blocks = null;
+        let last_recorded_bi = await dal.getLastRecordedBlockInfo();
+        if(last_recorded_bi != null){
+            last_recorded_blocks = last_recorded_bi.height;
+        }else{
+            last_recorded_blocks = await dal.getLastRecordedBlockHeight();
+        }
+        if(last_recorded_blocks == null) last_recorded_blocks = -1; 
         debug.info(`latest recorded block: ${last_recorded_blocks}`);
+
+        if(latest_block < last_recorded_blocks){
+            dbg_throw_error(`recorded blockchain rolled back! block# ${last_recorded_blocks}`);
+        }
+
+        if(last_recorded_bi != null){
+            let blk_hash = await client.getBlockHash(last_recorded_blocks);
+            if(blk_hash != last_recorded_bi.hash){
+                dbg_throw_error(`last blockhash mismatch! block# ${last_recorded_blocks}`);
+            }
+        }
 
         if(latest_block > last_recorded_blocks){
             if(first_time_check_blocks){
@@ -505,7 +531,11 @@ module.exports = {
 
                 await sample_batch(i, j);
 
-                await dal.setLastRecordedBlockHeight(j-1);
+                //await dal.setLastRecordedBlockHeight(j-1);
+                await dal.setLastRecordedBlockInfo({
+                    height: j-1,
+                    hash: end_blk_hash
+                });
 
                 i = j;
                 j = i + config.batch_blocks;                

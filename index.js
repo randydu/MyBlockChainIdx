@@ -37,7 +37,12 @@ function sample_run(){
     })
 }
 
-return Promise.all([sample.init(), dal.init()]).then(()=>{
+async function init(){
+    await dal.init();
+    await sample.init();
+}
+
+return init().then(()=>{
    // return sample.run();
    return sample_run();
 }).catch(err => {

@@ -1,5 +1,6 @@
 {
     batch_blocks: 100, //check how many blocks in a batch
+    max_confirms: 20, //the maximum confirmations that the block should be considered fully mined.
 
     coins: {//coin_traits
         bpx: { 
@@ -133,7 +134,7 @@
             "rpcpassword": "88488848"
         },
         {
-            "id": "bpx-mainnet",
+            "id": "bpx-mainnet-docker",
             coin: "bpx",
             "description": "BPX main-net",
             "network": "mainnet",

@@ -29,7 +29,7 @@ async function setLastValue(key, v){
 
 async function getLastValue(key){
     let r = await database.collection("summary").findOne({ _id: key });
-    return r == null ? -1 : r.value;
+    return r == null ? null : r.value;
 }
 
 async function deleteLastValue(key){
@@ -60,6 +60,7 @@ async function getNextPayloadIdLong(){
 const DB_VERSION_V1 = 1; //int32-indexed "coins" & "payloads" collections
 const DB_VERSION_V2 = 2; //6432-indexed "coins" & "payloads" collections
 const LATEST_DB_VERSION = DB_VERSION_V2;
+
 
 module.exports = {
 
@@ -167,11 +168,35 @@ module.exports = {
 
     async getDBVersion(){
         let v = await getLastValue("db_version");
-        return v < 0 ? 1 : v;
+        return v == null ? 1 : v;
     },
 
     async setDBVersion(db_ver){
         await setLastValue("db_version", db_ver);
+    },
+
+    async setCoinInfo(ci){
+        let pre_ci = await getLastValue("coin");
+        if(pre_ci == null){
+            await setLastValue("coin", ci);
+        }else{
+            if(ci.coin != pre_ci.coin || ci.network != pre_ci.network){
+                dbg_throw_error("coin info mismatch!");
+            }
+        }
+    },
+
+    async getLastRecordedBlockInfo(){
+        return await getLastValue('last_recorded_block');
+    },
+    async setLastRecordedBlockInfo(bi){
+        await setLastValue('last_recorded_block', bi);
+    },
+    async getLastSafeBlockInfo(){
+        return await getLastValue('last_safe_block');
+    },
+    async setLastSafeBlockInfo(bi){
+        await setLastValue('last_safe_block', bi);
     },
     
     async getLastRecordedBlockHeight(){
@@ -348,7 +373,7 @@ module.exports = {
             let tbCoins = database.collection('coins');
 
             let i = await getLastValue(last_upgrade_item);
-            if(i >= 0){
+            if(i != null){
                 i++; //start of next batch
             }else{
                 i = 0;
