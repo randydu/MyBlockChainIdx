@@ -39,6 +39,10 @@ async function run(){
 
     if((old_ver == 1) && (my_ver == 2)){
         await dal.upgradeV1toV2(debug);
+    } else if((old_ver == 2) && (my_ver == 3)){
+        await dal.upgradeV2toV3(debug);
+    } else {
+        dbg_throw_error(`Version upgrade ${old_ver}=>${my_ver} not implemented!`);
     }
 }
 

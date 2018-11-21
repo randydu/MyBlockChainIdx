@@ -4,6 +4,21 @@
  * Data Access Layer
  */
 
+const DB_VERSION_V1 = 1; //int32-indexed "coins" & "payloads" collections
+const DB_VERSION_V2 = 2; //int64-indexed "coins" & "payloads" collections
+/**
+ * V3: reorganize collections as following:
+ * 
+ * (1) coins/coins_multisig/coins_noaddress: uxto on blockchain 
+ * (2) pending_coins/pending_coins_multisig/pending_coins: uxto in mempool backup_spent_coins: uxtos spent by recent might-be-rolled-back blocks 
+ * (3) backup_blocks: recent might-be-rolled-back blocks 
+ * (4) log: event logs 
+ * (5) summary: generic info
+ */
+const DB_VERSION_V3 = 3; 
+const LATEST_DB_VERSION = DB_VERSION_V3;
+
+const BigNumber = require('bignumber.js');
 const common = require('./common');
 const debug = common.create_debug('dal');
 const config = common.config;
@@ -57,10 +72,6 @@ async function getNextPayloadIdLong(){
     return r == null ? LONG_ONE : Long.fromNumber(r._id).add(LONG_ONE);
 }
 
-const DB_VERSION_V1 = 1; //int32-indexed "coins" & "payloads" collections
-const DB_VERSION_V2 = 2; //6432-indexed "coins" & "payloads" collections
-const LATEST_DB_VERSION = DB_VERSION_V2;
-
 
 module.exports = {
 
@@ -81,8 +92,8 @@ module.exports = {
         const support_multisig = config.coin_traits.MULTISIG;
 
         if(!do_upgrade){
-            let lastBlockHeight = await this.getLastRecordedBlockHeight();
-            if(lastBlockHeight >= 0){
+            let lastBlockInfo = await this.getLastRecordedBlockInfo();
+            if(lastBlockInfo != null ){
                 let ver = await this.getDBVersion();
                 if(ver != LATEST_DB_VERSION){
                     //database version mismatch
@@ -93,14 +104,23 @@ module.exports = {
             await Promise.all([
                 database.createCollection("coins"),
                 support_multisig ? database.createCollection("coins_multisig") : Promise.resolve(),
-                database.createCollection("pending_spents"),
+                database.createCollection('coins_noaddr'),
+
+
                 database.createCollection("pending_coins"),
                 support_multisig ? database.createCollection("pending_coins_multisig") : Promise.resolve(),
+                database.createCollection("pending_coins_noaddr"),
+
+                database.createCollection("pending_spents"),
                 database.createCollection("rejects"),
 
                 support_payload ? database.createCollection("payloads") : Promise.resolve(),
                 support_payload ? database.createCollection("pending_payloads") : Promise.resolve(),
                 
+                database.createCollection('backup_blocks'),
+                database.createCollection('backup_spent_coins'),
+                database.createCollection('logs'),
+                database.createCollection('summary'),
             ]);
 
             await Promise.all([
@@ -116,6 +136,10 @@ module.exports = {
                     { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
                 ]) : Promise.resolve(), 
 
+                database.collection('coins_noaddr').createIndexes([
+                    { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
+                ]),
+
                 support_payload ? database.collection('payloads').createIndexes([
                     { key: { address: 1, hint: 1, subhint:1 }, name: "idx_addr_hint" }, 
                     { key: {height: 1}, name: "idx_height" }, 
@@ -129,6 +153,9 @@ module.exports = {
                 database.collection('pending_coins').createIndexes([
                     { key: { address: 1 }, name: "idx_addr" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
+                ]),
+                database.collection('pending_coins_noaddr').createIndexes([
+                    { key: {tx_id: 1}, name: "idx_tx"}, 
                 ]),
                 
                 support_multisig ?
@@ -144,7 +171,15 @@ module.exports = {
 
                 database.collection('rejects').createIndexes([
                     { key: { tx_id: 1 }, name: "idx_tx", unique: true }
-                ])
+                ]),
+
+                database.collection('backup_blocks').createIndexes([
+                    { key: {height: 1}, name: "idx_height", unique: true }, 
+                    { key: {hash: 1}, name: "idx_hash", unique: true },
+                ]),
+                database.collection('backup_spent_coins').createIndexes([
+                    { key: {height: 1}, name: "idx_height", unique: true }, 
+                ]),
             ]);
 
             await this.setDBVersion(LATEST_DB_VERSION);
@@ -417,7 +452,88 @@ module.exports = {
                 await deleteLastValue(last_upgrade_item);
                 await this.setDBVersion(LATEST_DB_VERSION);
 
-                dbg.info("Upgrade Successfully!");
+                dbg.info("V1=>V2 Upgrade Successfully!");
+            }
+        }
+    },
+    //-------------- V2 => V3 ---------------
+    async upgradeV2toV3(dbg){
+        //errors => coins_noaddr
+        await database.createCollection('coins_noaddr');
+        await database.collection('coins_noaddr').createIndexes([
+            { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
+        ]);
+
+        const last_upgrade_item = 'last_upgrade_item';
+
+        dbg.info('Counting total items to upgrade...');
+        let tbErrors = database.collection('errors');
+        let N = await tbErrors.countDocuments({});
+        dbg.info(`Total ${N} items to upgrade!`);
+
+        if(N > 0){
+            const coin_traits = config.coin_traits;
+            let tbCoins = database.collection('coins_noaddr');
+
+            let i = await getLastValue(last_upgrade_item);
+            if(i != null){
+                i++; //start of next batch
+            }else{
+                i = 0;
+            } 
+            if(i < N){
+                dbg.info(`delete all *dirty* items in target table from item[${i}]...`);
+                await tbCoins.deleteMany({_id: {$gte: Long.fromInt(i)}});
+            }
+
+            let j = i + config.batch_blocks;
+            if(j > N) j = N;
+
+            while(i < N) {
+                if(stopping) break;
+
+                dbg.info(`upgrading [${i}, ${j})...`);
+
+                let items = await tbErrors.find().sort({_id: 1}).skip(i).limit(j-i).toArray();
+
+                await tbCoins.insertMany(items.filter(x => x.height >=0).map((x, k) => {
+                    let out = x.tx_info.vout[x.pos];
+                    let vCoin = new BigNumber(out.value); 
+                    return {
+                        _id: Long.fromInt(i + k),
+                        tx_id: x.tx_id,
+                        pos: x.pos,
+                        value: vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString(),
+                        height: x.height,
+                        script: out.scriptPubKey
+                    } 
+                }));
+
+                await setLastValue(last_upgrade_item,j-1);
+
+                i = j;
+                if( i < N){
+                    j += config.batch_blocks;
+                    if(j > N) j = N;
+                }
+            }
+
+            let M = await getLastValue(last_upgrade_item);
+            if( M == N-1){
+                //dbg.info("Upgrade Successfully! (FAKE)");
+                //return; 
+                //complete upgrade
+                await tbErrors.drop();
+                await deleteLastValue(last_upgrade_item);
+                await this.setDBVersion(LATEST_DB_VERSION);
+
+                //Remove useless field
+                let bi = await this.getLastRecordedBlockInfo();
+                if(bi != null){
+                    await database.collection('summary').deleteOne({_id: 'lastBlockHeight'});
+                }
+
+                dbg.info("V2=>V3 Upgrade Successfully!");
             }
         }
     }

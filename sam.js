@@ -50,8 +50,8 @@ async function process_tis(blk_tis){
     let spents = [];
     let coins = [];
     let coins_multisig = [];
+    let coins_noaddr = [];
     let payloads = [];
-    let errs = [];
     let txids = [];
 
     let pending = false;
@@ -185,17 +185,6 @@ async function process_tis(blk_tis){
                 for(let j = 0; j < outs.length; j++){
                     let out = outs[j];
                     if(out.value > 0){//only save non-zero utxo
-                        if(typeof out.scriptPubKey.addresses === 'undefined'){
-                            errs.push({
-                                tx_id: txid,
-                                height: height,
-                                pos: j,
-                                message: `non-standard coin detected, no address defined.`,
-                                tx_info: tx_info
-                            });
-                            continue;
-                        }
-
                         let vCoin = new BigNumber(out.value);
                         vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
 
@@ -206,14 +195,17 @@ async function process_tis(blk_tis){
                         };
                         if(height >= 0) obj.height = height; //pending_xxx does not have height field.
 
-                        if(out.scriptPubKey.addresses.length > 1){ //multisig
+                        if(typeof out.scriptPubKey.addresses === 'undefined'){//no-address
+                            obj.script = out.scriptPubKey;
+                            coins_noaddr.push(obj);
+                        }else if(out.scriptPubKey.addresses.length > 1){ //multisig /multi-address
                             if(out.scriptPubKey.type !== 'multisig' || !coin_traits.MULTISIG)
                                 dbg_throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
 
                             //MULTISIG support
                             obj.addresses = out.scriptPubKey.addresses;
                             coins_multisig.push(obj);
-                        }else{
+                        }else{ //single-address
                             obj.address = out.scriptPubKey.addresses[0];
                             coins.push(obj);
                         }
