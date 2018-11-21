@@ -67,6 +67,11 @@ async function getNextMultiSigCoinId(){
     return r == null ? 1 : r._id + 1;
 }
 
+async function getNextNoAddrCoinIdLong(){
+    let r = await database.collection("coins_noaddr").find().sort({_id: -1}).limit(1).next();
+    return r == null ? LONG_ONE : Long.fromNumber(r._id).add(LONG_ONE);
+}
+
 async function getNextPayloadIdLong(){
     let r = await database.collection("payloads").find().sort({_id: -1}).limit(1).next();
     return r == null ? LONG_ONE : Long.fromNumber(r._id).add(LONG_ONE);
@@ -74,6 +79,11 @@ async function getNextPayloadIdLong(){
 
 
 module.exports = {
+    LOG_LEVEL_TRACE: 0,
+    LOG_LEVEL_INFO: 1,
+    LOG_LEVEL_WARN: 2,
+    LOG_LEVEL_ERROR: 3,
+    LOG_LEVEL_FATAL: 4,
 
     async init(do_upgrade = false){
         debug.info("dal.init >>");
@@ -112,11 +122,13 @@ module.exports = {
                 database.createCollection("pending_coins_noaddr"),
 
                 database.createCollection("pending_spents"),
-                database.createCollection("rejects"),
+                support_multisig? database.createCollection("pending_spents_multisig") : Promise.resolve(),
+                database.createCollection("pending_spents_noaddr"),
 
                 support_payload ? database.createCollection("payloads") : Promise.resolve(),
                 support_payload ? database.createCollection("pending_payloads") : Promise.resolve(),
                 
+                database.createCollection("rejects"),
                 database.createCollection('backup_blocks'),
                 database.createCollection('backup_spent_coins'),
                 database.createCollection('logs'),
@@ -171,6 +183,10 @@ module.exports = {
 
                 database.collection('rejects').createIndexes([
                     { key: { tx_id: 1 }, name: "idx_tx", unique: true }
+                ]),
+
+                database.collection('logs').createIndexes([
+                    { key: { level: 1 }, name: "idx_level", unique: true }
                 ]),
 
                 database.collection('backup_blocks').createIndexes([
@@ -241,8 +257,10 @@ module.exports = {
         await setLastValue('lastBlockHeight', height);
     },
 
-    async addErrors(errs){
-        return database.collection("errors").insertMany(errs);
+    async addLogs(logs){
+        if(logs.length > 0){
+            await database.collection("logs").insertMany(logs);
+        }
     },
 
     async removeCoinsAfterHeight(height){
@@ -256,16 +274,28 @@ module.exports = {
     },
 
     async addCoins(coins){
-        let N = await getNextCoinIdLong();
-        coins.forEach(x=> { x._id = N; N = N.add(LONG_ONE); });
-        return database.collection("coins").insertMany(coins);
+        if(coins.length > 0){
+            let N = await getNextCoinIdLong();
+            coins.forEach(x=> { x._id = N; N = N.add(LONG_ONE); });
+            await database.collection("coins").insertMany(coins);
+        }
     },
 
-    async addMultiSigCoins(coins){
-        let N = await getNextMultiSigCoinId();
-        coins.forEach(x => x._id = N++);
+    async addCoinsMultiSig(coins){
+        if(coins.length > 0){
+            let N = await getNextMultiSigCoinId();
+            coins.forEach(x => x._id = N++);
 
-        return database.collection("coins_multisig").insertMany(coins);
+            await database.collection("coins_multisig").insertMany(coins);
+        }
+    },
+
+    async addCoinsNoAddr(coins){
+        if(coins.length > 0){
+            let N = await getNextNoAddrCoinIdLong();
+            coins.forEach(x=> { x._id = N; N = N.add(LONG_ONE); });
+            await database.collection("coins_noaddr").insertMany(coins);
+        }
     },
 
     async addPayloads(payloads){
@@ -276,17 +306,21 @@ module.exports = {
     },
 
     async addSpents(spents){
-        let ops = spents.map(spent => {
-            return {
-                deleteOne: { "filter": {"tx_id": spent.spent_tx_id, "pos": spent.pos}}
-            }
-        });
+        if(spents.length > 0){
+            let ops = spents.map(spent => {
+                return {
+                    deleteOne: { "filter": {"tx_id": spent.spent_tx_id, "pos": spent.pos}}
+                }
+            });
+            let no_order = { ordered: false };
 
-        await database.collection("coins").bulkWrite( ops, { ordered: false });
-
-        if(config.coin_traits.MULTISIG){
-            await database.collection("coins_multisig").bulkWrite( ops, { ordered: false });
+            await Promise.all([
+                database.collection("coins").bulkWrite( ops, no_order),
+                database.collection("coins_noaddr").bulkWrite( ops,no_order), 
+                config.coin_traits.MULTISIG ? database.collection("coins_multisig").bulkWrite( ops, no_order) : Promise.resolve(),
+            ]);
         }
+
         /*
         return Promise.all(spents.map(spent => {
             //BIP34: the first coin (tx_id, pos) is spent. 
@@ -301,19 +335,47 @@ module.exports = {
     },
 
     async addPendingSpents(spents){
-        return database.collection("pending_spents").insertMany(spents);
+        if(spents.length > 0){
+            await database.collection("pending_spents").insertMany(spents);
+        }
+    },
+    async addPendingSpentsMultiSig(spents){
+        if(spents.length > 0){
+            await database.collection("pending_spents_multisig").insertMany(spents);
+        }
+    },
+    async addPendingSpentsNoAddr(spents){
+        if(spents.length > 0){
+            await database.collection("pending_spents_noaddr").insertMany(spents);
+        }
     },
     async addPendingCoins(coins){
-        return database.collection("pending_coins").insertMany(coins);
+        if(coins.length > 0){
+            await database.collection("pending_coins").insertMany(coins);
+        }
     },
-    async addPendingMultiSigCoins(coins){
-        return database.collection("pending_coins_multisig").insertMany(coins);
+    async addPendingCoinsMultiSig(coins){
+        if(coins.length > 0){
+            await database.collection("pending_coins_multisig").insertMany(coins);
+        }
+    },
+    async addPendingCoinsNoAddr(coins){
+        if(coins.length > 0){
+            await database.collection("pending_coins_noaddr").insertMany(coins);
+        }
     },
 
     async addPendingPayloads(payloads){
-        return database.collection("pending_payloads").insertMany(payloads);
+        if(payloads.length > 0){
+            await database.collection("pending_payloads").insertMany(payloads);
+        }
     },
 
+    /**
+     * Delete all pending info related to incoming txids
+     * 
+     * @param {txids} txids new parsed transaction-ids on blockchain
+     */
     async removePendingTransactions(txids){
         let ops = txids.map(txid => {
             return {
@@ -323,12 +385,14 @@ module.exports = {
 
         return Promise.all([
             database.collection("pending_coins").bulkWrite(ops, { ordered: false} ), 
-
-            config.coin_traits.MULTISIG ? 
-                database.collection("pending_coins_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
+            config.coin_traits.MULTISIG ? database.collection("pending_coins_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
+            database.collection("pending_coins_noaddr").bulkWrite(ops, { ordered: false} ), 
 
             database.collection("pending_payloads").bulkWrite( ops, { ordered: false} ),
+
             database.collection("pending_spents").bulkWrite(ops, { ordered: false} ),
+            config.coin_traits.MULTISIG ? database.collection("pending_spents_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
+            database.collection("pending_spents_noaddr").bulkWrite(ops, { ordered: false} ),
         ]);
         
         /*

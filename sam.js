@@ -47,12 +47,19 @@ async function getTransactionInfo(txid){
 }
 
 async function process_tis(blk_tis){
-    let spents = [];
+    let spents = []; //tx on blockchain only
+    let pending_spents = [];
+    let pending_spents_multisig = [];
+    let pending_spents_noaddr = [];
+
     let coins = [];
     let coins_multisig = [];
     let coins_noaddr = [];
+    
     let payloads = [];
     let txids = [];
+
+    let logs = [];
 
     let pending = false;
 
@@ -120,27 +127,36 @@ async function process_tis(blk_tis){
                 for(let j = 0; j < ins.length; j++){
                     let spent = ins[j];
                     if(spent.txid){//coinbase won't have txid defined
-                        //Detect if spent the same utxos (previous txs) in the same block.
-                        let oldLen = coins.length;
-                        //Cancel the (coin, spent) pair in memory
-                        for(let m = 0; m < coins.length; m++){
-                            let coin = coins[m];
-                            if((coin.tx_id == spent.txid) && (coin.pos == spent.vout)){
-                                /**
-                                 * First matched coin is spent.
-                                 * For non-BIP34 compatible cryptocurrency, there might be more than one matched coins, we want only one coin 
-                                 * (the first matched) is cancelled, that is why we cannot use the following code:
-                                 * 
-                                 *  coins = coins.filter(coin => (coin.tx_id != spent.txid)||(coin.pos != spent.vout));
-                                 * 
-                                 *  it may spend multiple coins with a single spent.
-                                 */
-                                coins.splice(m, 1);
-                                break;
+                        let spent_cancelled = false;
+                        if(config.coins_spent_in_mem_cancel){
+                            //Detect if spent the same utxos (previous txs) in the same block.
+                            //Cancel the (coin, spent) pair in memory
+                            function is_spent_cancelled(coins_arr, sp_txid, sp_pos){
+                                for(let m = 0; m < coins_arr.length; m++){
+                                    let coin = coins_arr[m];
+                                    if((coin.tx_id == sp_txid) && (coin.pos == sp_pos)){
+                                        /**
+                                         * First matched coin is spent.
+                                         * For non-BIP34 compatible cryptocurrency, there might be more than one matched coins, we want only one coin 
+                                         * (the first matched) is cancelled, that is why we cannot use the following code:
+                                         * 
+                                         *  coins = coins.filter(coin => (coin.tx_id != spent.txid)||(coin.pos != spent.vout));
+                                         * 
+                                         *  it may spend multiple coins with a single spent.
+                                         */
+                                        coins_arr.splice(m, 1);
+                                        return true;
+                                    }
+                                }
+                                return false;
                             }
+
+                            spent_cancelled = is_spent_cancelled(coins, spent.tx_id, spent.vout)
+                                    || is_spent_cancelled(coins_multisig, spent.tx_id, spent.vout)
+                                    || is_spent_cancelled(coins_noaddr, spent.tx_id, spent.vout);
                         }
 
-                        if(oldLen == coins.length){
+                        if(!spent_cancelled){
                             let obj = {
                                 tx_id: txid,
                                 spent_tx_id: spent.txid,
@@ -150,31 +166,41 @@ async function process_tis(blk_tis){
                                 //(address, value) is only needed for pending spents, the coins table only holds unspent xo.
                                 //TODO: we can retrieve the (address, value) info from dal --- the coin should already be in database.
                                 let tx_spent = await getTransactionInfo(spent.txid);
-                                if(tx_spent.vout.length <= spent.vout){
-                                    let msg = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
-                                    debug.fatal("tx_info: %O", tx_info);
-                                    debug.fatal("tx_spent: %O", tx_spent);
-                                    debug.fatal(msg);
-                                    throw new Error(msg);
-                                }
-                                let out = tx_spent.vout[spent.vout];
-                                if(typeof out.scriptPubKey.addresses === 'undefined'){
-                                    debug.warn(`spending non-standard coins (no address), ignored!`);
-                                    continue;
-                                }else{
-                                    if(out.scriptPubKey.addresses.length != 1){
-                                        let msg = `Spent UTXO with zero or multiple addresses not supported! txid [${spent.txid}] pos [${spent.pos}]`;
-                                        debug.warn(msg);
-                                        continue;
+                                if(tx_spent == null){
+                                    obj.level = dal.LOG_LEVEL_WARN; //just affect the balance::pending value
+                                    obj.message = 'spent tx not found';
+                                    logs.push(obj);
+
+                                    dbg.warn(obj.message);
+                                } else {
+                                    if(tx_spent.vout.length <= spent.vout){
+                                        obj.level = dal.LOG_LEVEL_WARN; //just affect the balance::pending value
+                                        obj.message = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
+                                        logs.push(obj);
+
+                                        dbg.warn(obj.message);
+                                    } else {
+                                        let out = tx_spent.vout[spent.vout];
+                                        let vCoin = new BigNumber(out.value); 
+                                        obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
+
+                                        if(typeof out.scriptPubKey.addresses === 'undefined'){
+                                            obj.script = out.scriptPubKey;
+                                            pending_spents_noaddr.push(obj);
+                                        }else{
+                                            if(out.scriptPubKey.addresses.length != 1){
+                                                obj.addresses = out.scriptPubKey.addresses;
+                                                pending_spents_multisig.push(obj);
+                                            }else{
+                                                obj.address = out.scriptPubKey.addresses[0];
+                                                pending_spents.push(obj);
+                                            }
+                                        }
                                     }
-
-                                    obj.address = out.scriptPubKey.addresses[0];
-                                    let vCoin = new BigNumber(out.value); 
-                                    obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
                                 }
+                            }else{
+                                spents.push(obj);
                             }
-
-                            spents.push(obj);
                         }
                     }
                 }                    
@@ -184,7 +210,7 @@ async function process_tis(blk_tis){
             if(outs.length > 0){
                 for(let j = 0; j < outs.length; j++){
                     let out = outs[j];
-                    if(out.value > 0){//only save non-zero utxo
+                    if(out.value >= 0){//only save non-zero utxo
                         let vCoin = new BigNumber(out.value);
                         vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
 
@@ -193,40 +219,29 @@ async function process_tis(blk_tis){
                             pos: j, //the j'th output in the tx
                             value: vCoin.toString(),
                         };
-                        if(height >= 0) obj.height = height; //pending_xxx does not have height field.
+                        if(!pending) obj.height = height; //pending_xxx does not have height field.
 
                         if(typeof out.scriptPubKey.addresses === 'undefined'){//no-address
                             obj.script = out.scriptPubKey;
                             coins_noaddr.push(obj);
                         }else if(out.scriptPubKey.addresses.length > 1){ //multisig /multi-address
-                            if(out.scriptPubKey.type !== 'multisig' || !coin_traits.MULTISIG)
-                                dbg_throw_error(`UTXO with zero or multiple addresses not supported! blk# [${height}] txid [${txid}] pos [${j}]`);
-
                             //MULTISIG support
                             obj.addresses = out.scriptPubKey.addresses;
                             coins_multisig.push(obj);
                         }else{ //single-address
                             obj.address = out.scriptPubKey.addresses[0];
                             coins.push(obj);
+
+                            //payload can only be parked on single-address vout
+                            if(support_payload && (out.payloadSize > 0)){
+                                obj.hint = out.payloadHint;
+                                obj.subhint = out.payloadSubHint;
+                                obj.size = out.payloadSize;
+                                obj.payload = out.payload;
+                                
+                                payloads.push(obj);
+                            }
                         }
-                    }
-
-                    if(support_payload && (out.payloadSize > 0)){
-                        let obj = {
-                            address: out.scriptPubKey.addresses[0],
-                            tx_id: txid,
-
-                            pos: j, //the j'th output in the tx
-
-                            hint: out.payloadHint,
-                            subhint: out.payloadSubHint,
-                            size: out.payloadSize,
-                            payload: out.payload
-                        }
-                        
-                        if(height >= 0) obj.height = height; //pending_xxx does not have height field.
-
-                        payloads.push(obj);
                     }
                 }
             }
@@ -247,48 +262,44 @@ async function process_tis(blk_tis){
         }
 
         //addCoins before addSpent! (to support spent uxio of tx in the same block)
-        if(coins.length > 0){
-            await dal.addCoins(coins);
-        }
+        await Promise.all([
+            dal.addCoins(coins),
+            dal.addCoinsMultiSig(coins_multisig),
+            dal.addCoinsNoAddr(coins_noaddr)
+        ]);
 
-        if(coins_multisig.length > 0){
-            await dal.addMultiSigCoins(coins_multisig);
-        }
-
-        if(spents.length > 0){
-            await dal.addSpents(spents);
-        }
+        await dal.addSpents(spents);
     } else { //pending
         if(first_time_save_pendings){
+            //avoid key-collision in case the pending tx is already saved in database in last session
             await dal.removePendingTransactions(txids);
             first_time_save_pendings = false;
         }
-        if(spents.length > 0){
-            await dal.addPendingSpents(spents);
-        }
-        if(coins.length > 0){
-            await dal.addPendingCoins(coins);
-        }
-        if(coins_multisig.length > 0){
-            await dal.addPendingMultiSigCoins(coins_multisig);
-        }
-        if(support_payload && (payloads.length > 0)){
-            await dal.addPendingPayloads(payloads);
-        }
+        await Promise.all([
+            dal.addPendingSpents(spents),
+            dal.addPendingSpentsMultiSig(spents),
+            dal.addPendingSpentsNoAddr(spents),
+
+            dal.addPendingCoins(coins),
+            dal.addPendingCoinsMultiSig(coins_multisig),
+            dal.addPendingCoinsNoAddr(coins_noaddr),
+
+            dal.addPendingPayloads(payloads),
+        ]);
     }
 
-    //errs
-    if(errs.length > 0){
-        await dal.addErrors(errs);
-    }
+    //logs
+    await dal.addLogs(logs);
 
     //manually release memory
+    /*
     spents.length = 0;
     coins.length = 0;
     coins_multisig.length = 0;
     payloads.length = 0;
     errs.length = 0;
     txids.length = 0;
+    */
 }
 
 async function sample_pendings(){
