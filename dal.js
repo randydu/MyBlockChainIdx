@@ -408,43 +408,52 @@ module.exports = {
     },
 
     async check_rejection(){
-        let spents = await database.collection("pending_spents").find().toArray();
-        if(spents.length > 0){
-            let rejects = new Set();
+        let rejects = new Set();
 
-            await Promise.all(spents.map(sp => {
-                if(!rejects.has(sp.tx_id)){
-                    return database.collection("coins").countDocuments({tx_id: {$eq: sp.spent_tx_id}, pos: {$eq: sp.pos}}).then(count => {
-                        if(count == 0){
-                            if(config.coin_traits.MULTISIG){
-                                return database.collection("coins_multisig").countDocuments({tx_id: {$eq: sp.spent_tx_id}, pos: {$eq: sp.pos}}).then(count => {
-                                    if(count == 0){
-                                        //spent missing, must have been consumed by another transaction on blockchain!
-                                        rejects.add(sp.tx_id);
-                                    }
-                                });
-                            }else{
-                                //spent missing, must have been consumed by another transaction on blockchain!
-                                rejects.add(sp.tx_id);
-                            }
+        async function search_rejected_txs(collectionName){
+            let spents = await database.collection(collectionName).find().toArray();
+            if(spents.length > 0){
+                for(let i = 0; i < spents.length; i++){
+                    let sp = spents[i];
+
+                    if(!rejects.has(sp.tx_id)){
+                        async function coin_found(collectionName){
+                            if((collectionName == "coins_multisig" || collectionName == "pending_coins_multisig") && (!config.coin_traits.MULTISIG)) return false;
+
+                            return await database.collection("coins").countDocuments({tx_id: sp.spent_tx_id, pos: sp.pos}) > 0;
                         }
-                    })
+
+                        if( !await coin_found("coins") &&
+                            !await coin_found("coins_noaddr") &&
+                            !await coin_found("coins_multisig") &&
+                            !await coin_found("pending_coins") &&
+                            !await coin_found("pending_coins_noaddr") &&
+                            !await coin_found("pending_coins_multisig") &&
+                            !await coin_found("backup_spent_coins") 
+                        ){
+                            //spent missing, must have been consumed by another transaction on blockchain!
+                            rejects.add(sp.tx_id);
+                        }
+                    }
                 }
-            }));
-
-            if(rejects.size > 0){
-                let txids = Array.from(rejects);
-                let items = txids.map(x => {
-                    return {tx_id: x}
-                });
-                await Promise.all([
-                    database.collection("rejects").insertMany(items),
-                    this.removePendingTransactions(txids)
-                ])
-
-                rejects.clear();
             }
-            rejects = null;
+        }
+
+        await search_rejected_txs("pending_spents");
+        await search_rejected_txs("pending_spents_multisig");
+        await search_rejected_txs("pending_spents_noaddr");
+
+        if(rejects.size > 0){
+            let txids = Array.from(rejects);
+            let items = txids.map(x => {
+                return {tx_id: x}
+            });
+            await Promise.all([
+                database.collection("rejects").insertMany(items),
+                this.removePendingTransactions(txids)
+            ])
+
+            rejects.clear();
         }
     },
     //-------------- V1 => V2 ---------------

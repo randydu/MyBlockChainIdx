@@ -50,15 +50,12 @@ process.on('SIGINT', handle);
 process.on('SIGTERM', handle);
 
 return run().then(()=>{
-    console.log("done!");
-    process.exitCode = 0;
+        console.log("done!");
+        process.exitCode = 0;
 
-//    debug.info("%O", process._getActiveRequests());
-//    debug.info("%O", process._getActiveHandles());
-    return dal.close();
-}).catch(err => {
-    console.log(err.message);
-
-    process.exitCode = -1;
-    return dal.close();
-});
+        //    debug.info("%O", process._getActiveRequests());
+        //    debug.info("%O", process._getActiveHandles());
+    }).catch(err => {
+        console.log(err.message);
+        process.exitCode = -1;
+    }).finally(dal.close)

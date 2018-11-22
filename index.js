@@ -34,7 +34,7 @@ function sample_run(){
 
     return sample.run().then(r => {
         if(quit) return Promise.resolve(-1);
-        
+
         return common.delay(sample_interval).then(sample_run);
         //setTimeout(sample_run, sample_interval);
     })
@@ -45,12 +45,9 @@ async function init(){
     await sample.init();
 }
 
-return init().then(()=>{
-   // return sample.run();
-   return sample_run();
-}).catch(err => {
-    console.error(err.message);
-
-    process.exit(-1);
-})
+return init().then( sample_run )
+    .catch(err => {
+        console.error(err.message);
+        process.exitCode = -1;
+    }).finally(dal.close);
 
