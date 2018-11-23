@@ -20,6 +20,7 @@ const Client = require('bitcoin-core');
 //initialized in init();
 var client = null; 
 
+let latest_block = -1; //the latest block height reported by coin's RPC-API.
 var pending_txids = new Set(); //pending txids
 
 //When it is the first time checking mempool, the pending txs might have been saved to database before
@@ -47,11 +48,16 @@ async function getTransactionInfo(txid){
 }
 
 async function process_tis(blk_tis){
-    let spents = []; //tx on blockchain only
+    //spents of txs on blockchain
+    let spents_remove = [];
+    let spents_backup = []; 
+
+    //spents of txs in mempool
     let pending_spents = [];
     let pending_spents_multisig = [];
     let pending_spents_noaddr = [];
 
+    //coins on either blockchain or mempool
     let coins = [];
     let coins_multisig = [];
     let coins_noaddr = [];
@@ -162,18 +168,21 @@ async function process_tis(blk_tis){
                                 spent_tx_id: spent.txid,
                                 pos: spent.vout
                             }
+                            
                             if(pending){
                                 //(address, value) is only needed for pending spents, the coins table only holds unspent xo.
                                 //TODO: we can retrieve the (address, value) info from dal --- the coin should already be in database.
                                 let tx_spent = await getTransactionInfo(spent.txid);
                                 if(tx_spent == null){
                                     obj.level = dal.LOG_LEVEL_WARN; //just affect the balance::pending value
-                                    obj.message = 'spent tx not found';
+                                    obj.message = `spent tx [${spent.txid}] not found`;
+                                    obj.code = 'TX_NOT_FOUND';
                                     logs.push(obj);
 
                                     dbg.warn(obj.message);
                                 } else {
                                     if(tx_spent.vout.length <= spent.vout){
+                                        obj.code = 'SPENT_NOT_FOUND';
                                         obj.level = dal.LOG_LEVEL_WARN; //just affect the balance::pending value
                                         obj.message = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
                                         logs.push(obj);
@@ -199,7 +208,12 @@ async function process_tis(blk_tis){
                                     }
                                 }
                             }else{
-                                spents.push(obj);
+                                if(latest_block - height < coin_traits.max_confirms){ 
+                                    obj.height = height; //backed up spent need height to rollback later if needed.
+                                    spents_backup.push(obj);
+                                } else {
+                                    spents_remove.push(obj);
+                                }
                             }
                         }
                     }
@@ -254,6 +268,8 @@ async function process_tis(blk_tis){
             txids.forEach(txid => {
                 pending_txids.delete(txid);
             });
+
+            //now that tx is mined on blockchain, it should be removed from pending records.
             await dal.removePendingTransactions(txids);
         }
 
@@ -268,7 +284,9 @@ async function process_tis(blk_tis){
             dal.addCoinsNoAddr(coins_noaddr)
         ]);
 
-        await dal.addSpents(spents);
+        await dal.removeSpents(spents_remove);
+        await dal.backupSpents(spents_backup);
+
     } else { //pending
         if(first_time_save_pendings){
             //avoid key-collision in case the pending tx is already saved in database in last session
@@ -289,7 +307,7 @@ async function process_tis(blk_tis){
     }
 
     //logs
-    await dal.addLogs(logs);
+    await dal.logEvent(logs);
 
     //manually release memory
     /*
@@ -361,6 +379,7 @@ let end_blk_hash = null; //last recorded block hash
 
 async function sample_batch(nStart, nEnd /* exclude */) {
     let blk_tis = [];
+    let blks = [];
 
     debug.info(`sync [${nStart}, ${nEnd})...`);
 
@@ -371,6 +390,13 @@ async function sample_batch(nStart, nEnd /* exclude */) {
         }
         let hdrs = await client.getBlockHeadersByHash(start_blk_hash, nEnd - nStart);
         for(let i = nStart; i < nEnd; i++){
+            if(latest_block - i < coin_traits.max_confirms){
+                blks.push({
+                    _id: i,
+                    hash: hdrs[i-nStart].hash
+                });
+            }
+
             let blk_info = await client.getBlockByHash(hdrs[i-nStart].hash);
 
             if(blk_info.height != i){
@@ -392,6 +418,13 @@ async function sample_batch(nStart, nEnd /* exclude */) {
             let blk_hash = await client.getBlockHash(i);
             if(i == nEnd-1){
                 end_blk_hash = blk_hash;
+            }
+
+            if(latest_block - i < coin_traits.max_confirms){
+                blks.push({
+                    _id: i,
+                    hash: blk_hash
+                });
             }
 
             let blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
@@ -432,9 +465,11 @@ async function sample_batch(nStart, nEnd /* exclude */) {
     }
 
     await process_tis(blk_tis);
+    if(blks.length > 0) await dal.addBackupBlocks(blks);
 
-    blk_tis.forEach(x => { x.tis.length = 0; });
-    blk_tis.length = 0;
+    //manually release resources
+    //blk_tis.forEach(x => { x.tis.length = 0; });
+    //blk_tis.length = 0;
 
     debug.info(`sync [${nStart}, ${nEnd}) done!`);
 }
@@ -494,7 +529,7 @@ module.exports = {
     async run(){
         debug.info('sam.run >> ');
 
-        let latest_block = await getLatestBlockCount();
+        latest_block = await getLatestBlockCount();
         debug.info(`latest block: ${latest_block}`);
 
         //detect if the last recorded block is a valid one
@@ -508,15 +543,71 @@ module.exports = {
         if(last_recorded_blocks == null) last_recorded_blocks = -1; 
         debug.info(`latest recorded block: ${last_recorded_blocks}`);
 
+        let to_rollback = false; //need rollback due to blockchain reorganization
         if(latest_block < last_recorded_blocks){
-            dbg_throw_error(`recorded blockchain rolled back! block# ${last_recorded_blocks}`);
+            to_rollback = true;
+        }else{
+            if(last_recorded_bi != null){
+                let blk_hash = await client.getBlockHash(last_recorded_blocks);
+                if((last_recorded_bi.hash != null) && (blk_hash != last_recorded_bi.hash)){
+                    to_rollback = true;
+                }
+            }
         }
 
-        if(last_recorded_bi != null){
-            let blk_hash = await client.getBlockHash(last_recorded_blocks);
-            if((last_recorded_bi.hash != null) && (blk_hash != last_recorded_bi.hash)){
-                dbg_throw_error(`last blockhash mismatch! block# ${last_recorded_blocks}`);
+        if(to_rollback){
+            dal.logEvent({
+                last_recorded_blocks,
+                latest_block,
+                message: 'start',
+            }, 'ROLLBACK', dal.LOG_LEVEL_WARN);
+
+            debug.warn('rollback blockchain...');
+
+            let last_good_blk = -1;
+            let blks = await dal.getBackupBlocks();
+            for(let i = blks.length-1; i >= 0; i--){
+                let blk = blks[i];
+                let blk_hash = await client.getBlockHash(blk._id);
+                if(blk_hash == blk.hash){
+                    last_good_blk = blk._id;
+                    break;
+                }
             }
+
+            if(last_good_blk == -1){
+                dal.logEvent({
+                    last_recorded_blocks,
+                    latest_block,
+                    message: 'failure: not enough backup blocks!'
+                }, 'ROLLBACK', dal.LOG_LEVEL_FATAL);
+
+                dbg_throw_error('rollback failure: not enough backup blocks!'); 
+            }
+
+            await Promise.all([
+                dal.removeBackupBlock(last_good_blk+1),
+                dal.removePayloads(last_good_blk+1),
+                dal.removeCoins(last_good_blk+1),
+                dal.removeCoinsMultiSig(last_good_blk+1),
+                dal.removeCoinsNoAddr(last_good_blk+1),
+            ]);
+            await dal.rollbackSpents(last_good_blk+1);
+
+            last_recorded_blocks = last_good_blk;
+            first_time_check_blocks = true;
+
+            first_time_save_pendings = true;
+            pending_txids.clear();
+
+            dal.logEvent({
+                last_recorded_blocks,
+                last_good_block,
+                latest_block,
+                message: 'done',
+            }, 'ROLLBACK', dal.LOG_LEVEL_WARN);
+
+            debug.warn(`blockchain is rolled back to ${last_good_block} successfully!`);
         }
 
         if(latest_block > last_recorded_blocks){

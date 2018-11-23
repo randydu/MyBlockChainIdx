@@ -190,11 +190,11 @@ module.exports = {
                 ]),
 
                 database.collection('backup_blocks').createIndexes([
-                    { key: {height: 1}, name: "idx_height", unique: true }, 
                     { key: {hash: 1}, name: "idx_hash", unique: true },
                 ]),
                 database.collection('backup_spent_coins').createIndexes([
                     { key: {height: 1}, name: "idx_height", unique: true }, 
+                    { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true },
                 ]),
             ]);
 
@@ -209,7 +209,7 @@ module.exports = {
     },
 
     async close(){
-        if(client) await client.close();
+        if(client && client.isConnected()) await client.close();
     },
 
     //The current db version supported.
@@ -257,12 +257,6 @@ module.exports = {
         await setLastValue('lastBlockHeight', height);
     },
 
-    async addLogs(logs){
-        if(logs.length > 0){
-            await database.collection("logs").insertMany(logs);
-        }
-    },
-
     async removeCoinsAfterHeight(height){
         return database.collection("coins").deleteMany({ height: { $gt: height } });
     },
@@ -280,6 +274,9 @@ module.exports = {
             await database.collection("coins").insertMany(coins);
         }
     },
+    async removeCoins(from_blk_no){
+        await database.collection("coins").deleteMany({height: {$gte: from_blk_no}});
+    },
 
     async addCoinsMultiSig(coins){
         if(coins.length > 0){
@@ -289,6 +286,9 @@ module.exports = {
             await database.collection("coins_multisig").insertMany(coins);
         }
     },
+    async removeCoinsMultiSig(from_blk_no){
+        await database.collection("coins_multisig").deleteMany({height: {$gte: from_blk_no}});
+    },
 
     async addCoinsNoAddr(coins){
         if(coins.length > 0){
@@ -296,6 +296,9 @@ module.exports = {
             coins.forEach(x=> { x._id = N; N = N.add(LONG_ONE); });
             await database.collection("coins_noaddr").insertMany(coins);
         }
+    },
+    async removeCoinsNoAddr(from_blk_no){
+        await database.collection("coins_noaddr").deleteMany({height: {$gte: from_blk_no}});
     },
 
     async addPayloads(payloads){
@@ -305,7 +308,11 @@ module.exports = {
         return database.collection("payloads").insertMany(payloads);
     },
 
-    async addSpents(spents){
+    async removePayloads(from_blk_no){
+        await database.collection("payloads").deleteMany({ height: {$gte: from_blk_no}});
+    },
+
+    async removeSpents(spents){
         if(spents.length > 0){
             let ops = spents.map(spent => {
                 return {
@@ -332,6 +339,67 @@ module.exports = {
             );
         }));
         */
+    },
+
+    async backupSpents(spents){
+        if(spents.length > 0){
+            let coins = [];
+
+            async function scanTable(collectionName, srcId){
+                let table = database.collection(collectionName);
+                if(table != null){
+                    for(let i = 0; i < spents.length; i++){
+                        let sp = spents[i];
+                        let coin = await table.findOneAndDelete({ tx_id: sp.spent_tx_id, pos: sp.pos });
+                        if(coin != null){
+                            coins.push({
+                                //used by rollbackSpents
+                                height: sp.height, 
+                                src: srcId,
+                                //used by check_rejection()
+                                tx_id: sp.spent_tx_id, //== coin.tx_id
+                                pos: sp.pos,  //== coin.pos
+
+                                coin,
+                            });
+                        }
+                    }
+                }
+            }
+
+            await Promise.all([
+                scanTable("coins", 0),
+                config.coin_traits.MULTISIG ? scanTable("coins_multisig", 1) : Promise.resolve(),
+                scanTable("coins_noaddr", 2)
+            ]);
+
+            if(coins.length > 0){
+                await database.collection("backup_spent_coins").insertMany(coins);
+            }
+        }
+    },
+
+    async rollbackSpents(from_blk_no){
+        let coins = [];
+        let coins_multisig = [];
+        let coins_noaddr = [];
+
+        let arrs = [coins, coins_multisig, coins_noaddr];
+        
+        let items = await database.collection("backup_spent_coins").find({height: {$gte: from_blk_no}}).toArray();
+        if(items.length > 0){
+            items.forEach(x => {
+                arrs[x.src].push(x.coin);
+            });
+
+            await Promise.all([
+                coins.length > 0 ? database.collection('coins').insertMany(coins) : Promise.resolve(),
+                coins_multisig.length > 0 ? database.collection('coins_multisig').insertMany(coins_multisig) : Promise.resolve(),
+                coins_noaddr.length > 0 ? database.collection('coins_noaddr').insertMany(coins_noaddr) : Promise.resolve(),
+
+                database.collection("backup_spent_coins").deleteMany({height: {$gte: from_blk_no}}),
+            ]);
+        }
     },
 
     async addPendingSpents(spents){
@@ -456,6 +524,34 @@ module.exports = {
             rejects.clear();
         }
     },
+
+    async addBackupBlocks(blks){
+        await database.collection('backup_blocks').insertMany(blks);
+    },
+
+    //returns in height order
+    async getBackupBlocks(){
+        return await database.collection('backup_blocks').find({_id: 1}).toArray();
+    },
+
+    async removeBackupBlocks(from_blk_no){
+        await database.collection('backup_blcoks').deleteMany({_id: {$gte: from_blk_no}});
+    },
+
+    async logEvent(obj, code='', level= LOG_LEVEL_INFO){
+        function prepareItem(x){
+            if(typeof x.code === 'undefined') x.code = code;
+            if(typeof x.level === 'undefined') x.level = level;
+        }
+        if(Array.isArray(obj)){
+            obj.forEach(prepareItem);
+            await database.collection('logs').insertMany(obj);
+        }else {
+            prepareItem(obj);
+            await database.collection('logs').insertOne(obj);
+        } 
+    },
+
     //-------------- V1 => V2 ---------------
     async upgradeV1toV2(dbg){
         //check if coin_v1 already exists, in case we may pick up from previous incomplete upgrading.

@@ -1,6 +1,5 @@
 {
     batch_blocks: 1000, //check how many blocks in a batch
-    max_confirms: 20, //the maximum confirmations that the block should be considered fully mined.
     //[PERFORMANCE] try search can and cancel the in-memory coins with incoming spents before commiting to database.
     // It could take longer time when the in-memory coins are huge.
     coins_spent_in_mem_cancel: false, 
@@ -21,6 +20,7 @@
             BIP34: true, //https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki
             REST: false, //do not support rest-api
             MULTISIG: false, //support address type "multisig"
+            max_confirms: 20, //the maximum confirmations that the block should be considered fully mined.
         },
         btc: {
             apis: ["getrawmempool"],
@@ -37,6 +37,7 @@
             BIP34: false, //only support from block #227,836
             REST: true,
             MULTISIG: true, //support address type "multisig"
+            max_confirms: 20, //the maximum confirmations that the block should be considered fully mined.
         },
         bch: {
             apis: ["getrawmempool"],
@@ -52,6 +53,7 @@
             BIP34: false,
             REST: true,
             MULTISIG: true, //support address type "multisig"
+            max_confirms: 20, //the maximum confirmations that the block should be considered fully mined.
         },
         ltc: {
             apis: ["getrawmempool"],
@@ -67,6 +69,7 @@
             BIP34: false,
             REST: true,
             MULTISIG: true, //support address type "multisig"
+            max_confirms: 20, //the maximum confirmations that the block should be considered fully mined.
         }
     },
 
