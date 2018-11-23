@@ -298,9 +298,9 @@ async function process_tis(blk_tis){
             first_time_save_pendings = false;
         }
         await Promise.all([
-            dal.addPendingSpents(spents),
-            dal.addPendingSpentsMultiSig(spents),
-            dal.addPendingSpentsNoAddr(spents),
+            dal.addPendingSpents(pending_spents),
+            dal.addPendingSpentsMultiSig(pending_spents_multisig),
+            dal.addPendingSpentsNoAddr(pending_spents_noaddr),
 
             dal.addPendingCoins(coins),
             dal.addPendingCoinsMultiSig(coins_multisig),
