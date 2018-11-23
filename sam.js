@@ -236,15 +236,19 @@ async function process_tis(blk_tis){
                         if(!pending) obj.height = height; //pending_xxx does not have height field.
 
                         if(typeof out.scriptPubKey.addresses === 'undefined'){//no-address
-                            obj.script = out.scriptPubKey;
-                            coins_noaddr.push(obj);
+                            if(out.value > 0){
+                                obj.script = out.scriptPubKey;
+                                coins_noaddr.push(obj);
+                            } 
                         }else if(out.scriptPubKey.addresses.length > 1){ //multisig /multi-address
                             //MULTISIG support
-                            obj.addresses = out.scriptPubKey.addresses;
-                            coins_multisig.push(obj);
+                            if(out.value > 0){
+                                obj.addresses = out.scriptPubKey.addresses;
+                                coins_multisig.push(obj);
+                            }
                         }else{ //single-address
                             obj.address = out.scriptPubKey.addresses[0];
-                            coins.push(obj);
+                            if(out.value > 0) coins.push(obj);
 
                             //payload can only be parked on single-address vout
                             if(support_payload && (out.payloadSize > 0)){
@@ -556,6 +560,8 @@ module.exports = {
         }
 
         if(to_rollback){
+            dbg_throw_error("ROLLBACK detected, PLEASE DEBUG ME!");
+
             dal.logEvent({
                 last_recorded_blocks,
                 latest_block,
@@ -650,6 +656,14 @@ module.exports = {
         if(!this.stop){
             //rejection
             await check_rejection();
+        }
+
+        if(!this.stop){
+            //retire backup blocks and spents
+            await Promise.all([
+                dal.retireBackupBlocks(latest_block - config.coin_traits.max_confirms),
+                dal.retireBackupSpents(latest_block - config.coin_traits.max_confirms),
+            ]);
         }
 
         debug.info('sam.run << ');

@@ -18,6 +18,12 @@ const DB_VERSION_V2 = 2; //int64-indexed "coins" & "payloads" collections
 const DB_VERSION_V3 = 3; 
 const LATEST_DB_VERSION = DB_VERSION_V3;
 
+const LOG_LEVEL_TRACE = 0;
+const LOG_LEVEL_INFO = 1;
+const LOG_LEVEL_WARN = 2;
+const LOG_LEVEL_ERROR = 3;
+const LOG_LEVEL_FATAL = 4;
+
 const BigNumber = require('bignumber.js');
 const common = require('./common');
 const debug = common.create_debug('dal');
@@ -79,11 +85,11 @@ async function getNextPayloadIdLong(){
 
 
 module.exports = {
-    LOG_LEVEL_TRACE: 0,
-    LOG_LEVEL_INFO: 1,
-    LOG_LEVEL_WARN: 2,
-    LOG_LEVEL_ERROR: 3,
-    LOG_LEVEL_FATAL: 4,
+    LOG_LEVEL_TRACE,
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARN,
+    LOG_LEVEL_ERROR,
+    LOG_LEVEL_FATAL,
 
     async init(do_upgrade = false){
         debug.info("dal.init >>");
@@ -201,7 +207,7 @@ module.exports = {
                     { key: {hash: 1}, name: "idx_hash", unique: true },
                 ]),
                 database.collection('backup_spent_coins').createIndexes([
-                    { key: {height: 1}, name: "idx_height", unique: true }, 
+                    { key: {height: 1}, name: "idx_height", unique: false }, 
                     { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true },
                 ]),
             ]);
@@ -358,8 +364,8 @@ module.exports = {
                 if(table != null){
                     for(let i = 0; i < spents.length; i++){
                         let sp = spents[i];
-                        let coin = await table.findOneAndDelete({ tx_id: sp.spent_tx_id, pos: sp.pos });
-                        if(coin != null){
+                        let res = await table.findOneAndDelete({ tx_id: sp.spent_tx_id, pos: sp.pos });
+                        if(res.ok && res.value != null){
                             coins.push({
                                 //used by rollbackSpents
                                 height: sp.height, 
@@ -368,7 +374,7 @@ module.exports = {
                                 tx_id: sp.spent_tx_id, //== coin.tx_id
                                 pos: sp.pos,  //== coin.pos
 
-                                coin,
+                                coin: res.value,
                             });
                         }
                     }
@@ -408,6 +414,10 @@ module.exports = {
                 database.collection("backup_spent_coins").deleteMany({height: {$gte: from_blk_no}}),
             ]);
         }
+    },
+
+    async retireBackupSpents(before_blk_no){
+        await database.collection("backup_spent_coins").deleteMany({ height: {$lte: before_blk_no}});
     },
 
     async addPendingSpents(spents){
@@ -555,6 +565,9 @@ module.exports = {
     async removeBackupBlocks(from_blk_no){
         await database.collection('backup_blcoks').deleteMany({_id: {$gte: from_blk_no}});
     },
+    async retireBackupBlocks(before_blk_no){
+        await database.collection("backup_blocks").deleteMany({ _id: {$lte: before_blk_no}});
+    },
 
     async logEvent(obj, code='', level= LOG_LEVEL_INFO){
         function prepareItem(x){
@@ -562,8 +575,10 @@ module.exports = {
             if(typeof x.level === 'undefined') x.level = level;
         }
         if(Array.isArray(obj)){
-            obj.forEach(prepareItem);
-            await database.collection('logs').insertMany(obj);
+            if(obj.length > 0){
+                obj.forEach(prepareItem);
+                await database.collection('logs').insertMany(obj);
+            }
         }else {
             prepareItem(obj);
             await database.collection('logs').insertOne(obj);
@@ -712,7 +727,7 @@ module.exports = {
             if( M == N-1){
                 await tbErrors.drop();
                 await deleteLastValue(last_upgrade_item);
-                
+
                 done = true;
             }
         }else{
