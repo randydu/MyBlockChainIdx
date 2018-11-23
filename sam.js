@@ -30,6 +30,11 @@ var first_time_save_pendings = true;
 var first_time_check_blocks = true;
 ////////////////////////////////////////////////////////////////
 
+const api = require('./api');
+function postStatus(status){
+    api.setStatus(status);
+}
+
 async function getLatestBlockCount(){
     if(use_rest_api){
         let r = await client.getBlockchainInformation();
@@ -484,6 +489,8 @@ module.exports = {
     async init(){
         debug.trace('sam.init >> ');
 
+        postStatus('INIT');
+
         //full-node accessor
         client = new Client({
             version: node.rpcversion,
@@ -616,7 +623,10 @@ module.exports = {
             debug.warn(`blockchain is rolled back to ${last_good_block} successfully!`);
         }
 
+        postStatus(latest_block - last_recorded_blocks > process.env.SYNC_TOLERANCE ? 'SYNCING' : 'OK');
+
         if(latest_block > last_recorded_blocks){
+
             if(first_time_check_blocks){
                 first_time_check_blocks = false;
                 await Promise.all([
@@ -648,6 +658,8 @@ module.exports = {
                 if(j > latest_block) j = latest_block + 1; //last batch
             }
         }
+
+        postStatus('OK');
 
         if(!this.stop){
             //pendings

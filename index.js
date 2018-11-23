@@ -6,6 +6,7 @@ const common = require('./common');
 const sample = require('./sam');
 const dal = require('./dal');
 
+
 let quit = false;
 
 async function handle(signal){
@@ -43,6 +44,10 @@ function sample_run(){
 async function init(){
     await dal.init();
     await sample.init();
+}
+
+if(process.env.HTTP){
+    require('./api').run(process.env.HTTP_PORT);
 }
 
 return init().then( sample_run )
