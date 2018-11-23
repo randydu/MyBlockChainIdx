@@ -5,7 +5,9 @@ require('dotenv').config({ path: __dirname + '/.env'});
 const common = require('./common');
 const sample = require('./sam');
 const dal = require('./dal');
+const api = require('./api');
 
+const debug = common.create_debug('sam');
 
 let quit = false;
 
@@ -46,13 +48,19 @@ async function init(){
     await sample.init();
 }
 
-if(process.env.HTTP){
-    require('./api').run(process.env.HTTP_PORT);
+if(+process.env.HTTP){
+    api.run(process.env.HTTP_PORT);
 }
 
 return init().then( sample_run )
     .catch(err => {
-        console.error(err.message);
+        debug.err(err.message);
         process.exitCode = -1;
+        
+        api.setStatus(`ERROR: ${err.message}`);
+
+        if(+process.env.EXIT_ON_ERROR){
+            process.kill(process.pid, "SIGINT");
+        }
     }).then(dal.close);
     

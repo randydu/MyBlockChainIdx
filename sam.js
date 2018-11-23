@@ -31,6 +31,7 @@ var first_time_check_blocks = true;
 ////////////////////////////////////////////////////////////////
 
 const api = require('./api');
+
 function postStatus(status){
     api.setStatus(status);
 }

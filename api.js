@@ -18,7 +18,7 @@ module.exports = {
                 switch(this.status){
                     case 'OK': return res.status(200).send('OK');
                     case 'SYNCING': return res.status(429).send('SYNCING');
-                    default: return res.status(400).send('BAD');
+                    default: return res.status(400).send(this.status);
                 }
             }catch(err){
                 console.error(`check >> ${err.message}`);
