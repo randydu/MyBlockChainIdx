@@ -568,7 +568,7 @@ module.exports = {
         }
 
         if(to_rollback){
-            dbg_throw_error("ROLLBACK detected, PLEASE DEBUG ME!");
+            //dbg_throw_error("ROLLBACK detected, PLEASE DEBUG ME!");
 
             dal.logEvent({
                 last_recorded_blocks,
@@ -578,18 +578,18 @@ module.exports = {
 
             debug.warn('rollback blockchain...');
 
-            let last_good_blk = -1;
+            let last_good_block = -1;
             let blks = await dal.getBackupBlocks();
             for(let i = blks.length-1; i >= 0; i--){
                 let blk = blks[i];
                 let blk_hash = await client.getBlockHash(blk._id);
                 if(blk_hash == blk.hash){
-                    last_good_blk = blk._id;
+                    last_good_block = blk._id;
                     break;
                 }
             }
 
-            if(last_good_blk == -1){
+            if(last_good_block == -1){
                 dal.logEvent({
                     last_recorded_blocks,
                     latest_block,
@@ -599,16 +599,9 @@ module.exports = {
                 dbg_throw_error('rollback failure: not enough backup blocks!'); 
             }
 
-            await Promise.all([
-                dal.removeBackupBlock(last_good_blk+1),
-                dal.removePayloads(last_good_blk+1),
-                dal.removeCoins(last_good_blk+1),
-                dal.removeCoinsMultiSig(last_good_blk+1),
-                dal.removeCoinsNoAddr(last_good_blk+1),
-            ]);
-            await dal.rollbackSpents(last_good_blk+1);
+            await dal.rollback(last_good_block);
 
-            last_recorded_blocks = last_good_blk;
+            last_recorded_blocks = last_good_block;
             first_time_check_blocks = true;
 
             first_time_save_pendings = true;
@@ -630,11 +623,9 @@ module.exports = {
 
             if(first_time_check_blocks){
                 first_time_check_blocks = false;
-                await Promise.all([
-                    dal.removeCoinsAfterHeight(last_recorded_blocks), 
-                    coin_traits.MULTISIG ? dal.removeMultiSigCoinsAfterHeight(last_recorded_blocks): Promise.resolve(),
-                    dal.removePayloadsAfterHeight(last_recorded_blocks),
-                ]);
+
+                //in case the previous session is not completed.
+                await dal.rollback(last_recorded_blocks);
             }
 
             let i = last_recorded_blocks + 1; //start blk# of this batch

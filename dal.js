@@ -169,10 +169,10 @@ module.exports = {
                     { key: { address: 1 }, name: "idx_addr" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
                 ]),
-                database.collection('pending_spents_multisig').createIndexes([
+                support_multisig? database.collection('pending_spents_multisig').createIndexes([
                     { key: { addresses: 1 }, name: "idx_addr" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
-                ]),
+                ]): Promise.resolve(),
                 database.collection('pending_spents_noaddr').createIndexes([
                     { key: {tx_id: 1}, name: "idx_tx" } 
                 ]),
@@ -200,7 +200,7 @@ module.exports = {
                 ]),
 
                 database.collection('logs').createIndexes([
-                    { key: { level: 1 }, name: "idx_level", unique: true }
+                    { key: { level: 1 }, name: "idx_level", unique: false }
                 ]),
 
                 database.collection('backup_blocks').createIndexes([
@@ -269,16 +269,6 @@ module.exports = {
     },
     async setLastRecordedBlockHeight(height){
         await setLastValue('lastBlockHeight', height);
-    },
-
-    async removeCoinsAfterHeight(height){
-        return database.collection("coins").deleteMany({ height: { $gt: height } });
-    },
-    async removeMultiSigCoinsAfterHeight(height){
-        return database.collection("coins_multisig").deleteMany({ height: { $gt: height } });
-    },
-    async removePayloadsAfterHeight(height){
-        return database.collection("payloads").deleteMany({ height: { $gt: height } });
     },
 
     async addCoins(coins){
@@ -559,11 +549,11 @@ module.exports = {
 
     //returns in height order
     async getBackupBlocks(){
-        return await database.collection('backup_blocks').find({_id: 1}).toArray();
+        return await database.collection('backup_blocks').find({}).sort({_id: 1}).toArray();
     },
 
     async removeBackupBlocks(from_blk_no){
-        await database.collection('backup_blcoks').deleteMany({_id: {$gte: from_blk_no}});
+        await database.collection('backup_blocks').deleteMany({_id: {$gte: from_blk_no}});
     },
     async retireBackupBlocks(before_blk_no){
         await database.collection("backup_blocks").deleteMany({ _id: {$lte: before_blk_no}});
@@ -585,6 +575,17 @@ module.exports = {
         } 
     },
 
+    async rollback(last_good_block){
+        await this.rollbackSpents(last_good_block+1);
+        await Promise.all([
+            this.removeBackupBlocks(last_good_block+1),
+            this.removePayloads(last_good_block+1),
+
+            this.removeCoins(last_good_block+1),
+            this.removeCoinsMultiSig(last_good_block+1),
+            this.removeCoinsNoAddr(last_good_block+1),
+        ]);
+    },
     //-------------- V1 => V2 ---------------
     async upgradeV1toV2(dbg){
         //check if coin_v1 already exists, in case we may pick up from previous incomplete upgrading.
