@@ -58,4 +58,4 @@ return run().then(()=>{
     }).catch(err => {
         console.log(err.message);
         process.exitCode = -1;
-    }).finally(dal.close)
+    }).then(dal.close)

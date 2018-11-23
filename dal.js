@@ -149,6 +149,7 @@ module.exports = {
                 ]) : Promise.resolve(), 
 
                 database.collection('coins_noaddr').createIndexes([
+                    { key: {height: 1}, name: "idx_height" }, 
                     { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
                 ]),
 
@@ -160,6 +161,13 @@ module.exports = {
 
                 database.collection('pending_spents').createIndexes([
                     { key: { address: 1 }, name: "idx_addr" }, 
+                    { key: {tx_id: 1}, name: "idx_tx" } 
+                ]),
+                database.collection('pending_spents_multisig').createIndexes([
+                    { key: { addresses: 1 }, name: "idx_addr" }, 
+                    { key: {tx_id: 1}, name: "idx_tx" } 
+                ]),
+                database.collection('pending_spents_noaddr').createIndexes([
                     { key: {tx_id: 1}, name: "idx_tx" } 
                 ]),
                 database.collection('pending_coins').createIndexes([
@@ -478,6 +486,16 @@ module.exports = {
     async check_rejection(){
         let rejects = new Set();
 
+        let collections = {
+            coins: database.collection("coins"),
+            coins_noaddr: database.collection("coins_noaddr"),
+            coins_multisig: database.collection("coins_multisig"),
+            pending_coins: database.collection("pending_coins"),
+            pending_coins_noaddr: database.collection("pending_coins_noaddr"),
+            pending_coins_multisig: database.collection("pending_coins_multisig"),
+            backup_spent_coins: database.collection("backup_spent_coins"),
+        }
+
         async function search_rejected_txs(collectionName){
             let spents = await database.collection(collectionName).find().toArray();
             if(spents.length > 0){
@@ -485,10 +503,10 @@ module.exports = {
                     let sp = spents[i];
 
                     if(!rejects.has(sp.tx_id)){
-                        async function coin_found(collectionName){
-                            if((collectionName == "coins_multisig" || collectionName == "pending_coins_multisig") && (!config.coin_traits.MULTISIG)) return false;
+                        async function coin_found(name){
+                            if((name == "coins_multisig" || name == "pending_coins_multisig") && (!config.coin_traits.MULTISIG)) return false;
 
-                            return await database.collection("coins").countDocuments({tx_id: sp.spent_tx_id, pos: sp.pos}) > 0;
+                            return await collections[name].countDocuments({tx_id: sp.spent_tx_id, pos: sp.pos}) > 0;
                         }
 
                         if( !await coin_found("coins") &&
@@ -630,6 +648,7 @@ module.exports = {
         //errors => coins_noaddr
         await database.createCollection('coins_noaddr');
         await database.collection('coins_noaddr').createIndexes([
+            { key: {height: 1}, name: "idx_height" }, 
             { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true }, //multisig cannot appear in coinbase, so it should be unique
         ]);
 
@@ -639,6 +658,8 @@ module.exports = {
         let tbErrors = database.collection('errors');
         let N = await tbErrors.countDocuments({});
         dbg.info(`Total ${N} items to upgrade!`);
+
+        let done = false;
 
         if(N > 0){
             const coin_traits = config.coin_traits;
@@ -689,21 +710,28 @@ module.exports = {
 
             let M = await getLastValue(last_upgrade_item);
             if( M == N-1){
-                //dbg.info("Upgrade Successfully! (FAKE)");
-                //return; 
-                //complete upgrade
                 await tbErrors.drop();
                 await deleteLastValue(last_upgrade_item);
-                await this.setDBVersion(LATEST_DB_VERSION);
-
-                //Remove useless field
-                let bi = await this.getLastRecordedBlockInfo();
-                if(bi != null){
-                    await database.collection('summary').deleteOne({_id: 'lastBlockHeight'});
-                }
-
-                dbg.info("V2=>V3 Upgrade Successfully!");
+                
+                done = true;
             }
+        }else{
+            done = true;
+        }
+
+        if(done){
+            //dbg.info("Upgrade Successfully! (FAKE)");
+            //return; 
+            //complete upgrade
+            await this.setDBVersion(LATEST_DB_VERSION);
+
+            //Remove useless field
+            let bi = await this.getLastRecordedBlockInfo();
+            if(bi != null){
+                await database.collection('summary').deleteOne({_id: 'lastBlockHeight'});
+            }
+
+            dbg.info("V2=>V3 Upgrade Successfully!");
         }
     }
 }

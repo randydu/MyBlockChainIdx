@@ -49,5 +49,5 @@ return init().then( sample_run )
     .catch(err => {
         console.error(err.message);
         process.exitCode = -1;
-    }).finally(dal.close);
-
+    }).then(dal.close);
+    
