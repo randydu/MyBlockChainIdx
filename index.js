@@ -7,8 +7,6 @@ const sample = require('./sam');
 const dal = require('./dal');
 const api = require('./api');
 
-const debug = common.create_debug('sam');
-
 let quit = false;
 
 async function handle(signal){

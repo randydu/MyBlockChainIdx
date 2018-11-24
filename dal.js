@@ -28,7 +28,6 @@ const BigNumber = require('bignumber.js');
 const common = require('./common');
 const debug = common.create_debug('dal');
 const config = common.config;
-const dbg_throw_error = common.dbg_throw_error(debug);
 
 const Long = require('mongodb').Long;
 const LONG_ONE = Long.fromInt(1);
@@ -99,7 +98,7 @@ module.exports = {
         
         client = await MongoClient.connect(mongodb_url, { useNewUrlParser: true });
         if(!client.isConnected()){
-            dbg_throw_error("database not connected!");
+            dbg.throw_error("database not connected!");
         }
 
         database = client.db('myidx');
@@ -113,7 +112,7 @@ module.exports = {
                 let ver = await this.getDBVersion();
                 if(ver != LATEST_DB_VERSION){
                     //database version mismatch
-                    dbg_throw_error(`Database version mismatch, the version expected: [${LATEST_DB_VERSION}] db_version: [${ver}], need to run upgrade once!`);
+                    dbg.throw_error(`Database version mismatch, the version expected: [${LATEST_DB_VERSION}] db_version: [${ver}], need to run upgrade once!`);
                 }
             }
 
@@ -246,7 +245,7 @@ module.exports = {
             await setLastValue("coin", ci);
         }else{
             if(ci.coin != pre_ci.coin || ci.network != pre_ci.network){
-                dbg_throw_error("coin info mismatch!");
+                dbg.throw_error("coin info mismatch!");
             }
         }
     },
@@ -560,9 +559,14 @@ module.exports = {
     },
 
     async logEvent(obj, code='', level= LOG_LEVEL_INFO){
+        let pid = process.pid;
+        let t = new Date().toISOString();
+
         function prepareItem(x){
             if(typeof x.code === 'undefined') x.code = code;
             if(typeof x.level === 'undefined') x.level = level;
+            x.pid = pid;
+            x.t = t;
         }
         if(Array.isArray(obj)){
             if(obj.length > 0){

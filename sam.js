@@ -5,7 +5,6 @@ const common = require('./common');
 const BigNumber = require('bignumber.js');
 
 const debug = common.create_debug('sam');
-const dbg_throw_error = common.dbg_throw_error(debug);
 
 const config = common.config;
 const node = config.node;
@@ -351,7 +350,7 @@ async function sample_pendings(){
                 let txid = new_txids[i];
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){
-                    dbg_throw_error(`transaction [${txid}]  not found!`);
+                    dbg.throw_error(`transaction [${txid}]  not found!`);
                 }
                 tis.push(ti);
             };
@@ -410,7 +409,7 @@ async function sample_batch(nStart, nEnd /* exclude */) {
             let blk_info = await client.getBlockByHash(hdrs[i-nStart].hash);
 
             if(blk_info.height != i){
-                dbg_throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
+                dbg.throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
             }
 
             blk_tis.push({
@@ -555,6 +554,11 @@ module.exports = {
         if(last_recorded_blocks == null) last_recorded_blocks = -1; 
         debug.info(`latest recorded block: ${last_recorded_blocks}`);
 
+        let obj = {
+            last_recorded_blocks,
+            latest_block,
+        };
+
         let to_rollback = false; //need rollback due to blockchain reorganization
         if(latest_block < last_recorded_blocks){
             to_rollback = true;
@@ -562,6 +566,10 @@ module.exports = {
             if(last_recorded_bi != null){
                 let blk_hash = await client.getBlockHash(last_recorded_blocks);
                 if((last_recorded_bi.hash != null) && (blk_hash != last_recorded_bi.hash)){
+
+                    obj.last_recorded_hash = last_recorded_bi.hash;
+                    obj.latest_block_hash = blk_hash;
+
                     to_rollback = true;
                 }
             }
@@ -570,34 +578,33 @@ module.exports = {
         if(to_rollback){
             //dbg_throw_error("ROLLBACK detected, PLEASE DEBUG ME!");
 
-            dal.logEvent({
-                last_recorded_blocks,
-                latest_block,
-                message: 'start',
-            }, 'ROLLBACK', dal.LOG_LEVEL_WARN);
+            obj.message = 'start';
+            dal.logEvent( obj, 'ROLLBACK', dal.LOG_LEVEL_WARN);
 
             debug.warn('rollback blockchain...');
 
             let last_good_block = -1;
+            let last_good_block_hash = '';
             let blks = await dal.getBackupBlocks();
             for(let i = blks.length-1; i >= 0; i--){
                 let blk = blks[i];
                 let blk_hash = await client.getBlockHash(blk._id);
                 if(blk_hash == blk.hash){
                     last_good_block = blk._id;
+                    last_good_block_hash = blk_hash;
                     break;
                 }
             }
 
             if(last_good_block == -1){
-                dal.logEvent({
-                    last_recorded_blocks,
-                    latest_block,
-                    message: 'failure: not enough backup blocks!'
-                }, 'ROLLBACK', dal.LOG_LEVEL_FATAL);
+                obj.message = 'failure: not enough backup blocks!';
+                dal.logEvent(obj, 'ROLLBACK', dal.LOG_LEVEL_FATAL);
 
-                dbg_throw_error('rollback failure: not enough backup blocks!'); 
+                dbg.throw_error('rollback failure: not enough backup blocks!'); 
             }
+
+            obj.last_good_block = last_good_block;
+            obj.last_good_block_hash = last_good_block_hash;
 
             await dal.rollback(last_good_block);
 
@@ -607,12 +614,8 @@ module.exports = {
             first_time_save_pendings = true;
             pending_txids.clear();
 
-            dal.logEvent({
-                last_recorded_blocks,
-                last_good_block,
-                latest_block,
-                message: 'done',
-            }, 'ROLLBACK', dal.LOG_LEVEL_WARN);
+            obj.message = 'done';
+            dal.logEvent( obj, 'ROLLBACK', dal.LOG_LEVEL_WARN);
 
             debug.warn(`blockchain is rolled back to ${last_good_block} successfully!`);
         }

@@ -59,7 +59,12 @@ function create_debug(name){
         info: dbg(`${name}.info`),
         warn: dbg(`${name}.warn`),
         err: dbg(`${name}.err`),
-        fatal: dbg(`${name}.fatal`)
+        fatal: dbg(`${name}.fatal`),
+
+        throw_error: msg => {
+            this.err(msg);
+            throw new Error(msg);
+        }
     };
 }
 
@@ -79,10 +84,6 @@ function add_apis(client, apis){
     })
 }
 
-function throw_error(dbg, msg){
-    dbg.err(msg);
-    throw new Error(msg);
-}
 
 module.exports = {
     config,
@@ -90,7 +91,4 @@ module.exports = {
     create_debug,
     make_serial,
     add_apis,
-    dbg_throw_error(dbg){
-        return throw_error.bind(this,dbg);
-    }
 }

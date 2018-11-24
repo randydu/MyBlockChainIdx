@@ -9,9 +9,6 @@ require('dotenv').config({ path: __dirname + '/.env'});
 
 const common = require('./common');
 const debug = common.create_debug('up');
-const dbg_throw_error = common.dbg_throw_error(debug);
-
-const config = common.config;
 
 const dal = require('./dal');
 
@@ -42,7 +39,7 @@ async function run(){
     } else if((old_ver == 2) && (my_ver == 3)){
         await dal.upgradeV2toV3(debug);
     } else {
-        dbg_throw_error(`Version upgrade ${old_ver}=>${my_ver} not implemented!`);
+        dbg.throw_error(`Version upgrade ${old_ver}=>${my_ver} not implemented!`);
     }
 }
 
