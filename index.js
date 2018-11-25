@@ -55,6 +55,13 @@ if(+process.env.HTTP){
 return init().then( sample_run )
     .catch(err => {
         debug.err(err.message);
+
+        await dal.logEvent({
+            message: err.message,
+            code: 'ERROR',
+            level: dal.LOG_LEVEL_ERROR
+        });
+
         process.exitCode = -1;
         
         api.setStatus(`ERROR: ${err.message}`);

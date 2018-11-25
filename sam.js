@@ -586,15 +586,15 @@ module.exports = {
             }
         }
 
+        let last_good_block = -1;
         if(to_rollback){
             //dbg_throw_error("ROLLBACK detected, PLEASE DEBUG ME!");
 
             obj.message = 'start';
-            dal.logEvent( obj, 'ROLLBACK', dal.LOG_LEVEL_WARN);
+            await dal.logEvent( obj, 'ROLLBACK', dal.LOG_LEVEL_WARN);
 
             debug.warn('rollback blockchain...');
 
-            let last_good_block = -1;
             let last_good_block_hash = '';
             let blks = await dal.getBackupBlocks();
             for(let i = blks.length-1; i >= 0; i--){
@@ -609,7 +609,7 @@ module.exports = {
 
             if(last_good_block == -1){
                 obj.message = 'failure: not enough backup blocks!';
-                dal.logEvent(cloneObj(obj), 'ROLLBACK', dal.LOG_LEVEL_FATAL);
+                await dal.logEvent(cloneObj(obj), 'ROLLBACK', dal.LOG_LEVEL_FATAL);
 
                 dbg.throw_error('rollback failure: not enough backup blocks!'); 
             }
@@ -626,7 +626,7 @@ module.exports = {
             pending_txids.clear();
 
             obj.message = 'done';
-            dal.logEvent( cloneObj(obj), 'ROLLBACK', dal.LOG_LEVEL_WARN);
+            await dal.logEvent( cloneObj(obj), 'ROLLBACK', dal.LOG_LEVEL_WARN);
 
             debug.warn(`blockchain is rolled back to ${last_good_block} successfully!`);
         }
@@ -639,7 +639,8 @@ module.exports = {
                 first_time_check_blocks = false;
 
                 //in case the previous session is not completed.
-                await dal.rollback(last_recorded_blocks);
+                //avoid rollback twice if just rollback before.
+                if(last_good_block != -1) await dal.rollback(last_recorded_blocks);
             }
 
             let i = last_recorded_blocks + 1; //start blk# of this batch

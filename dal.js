@@ -502,6 +502,8 @@ module.exports = {
                     let sp = spents[i];
 
                     if(!rejects.has(sp.tx_id)){
+                        
+
                         async function coin_found(name){
                             if((name == "coins_multisig" || name == "pending_coins_multisig") && (!config.coin_traits.MULTISIG)) return false;
 
