@@ -35,6 +35,17 @@ function postStatus(status){
     api.setStatus(status);
 }
 
+function cloneObj(obj){
+    let res = {};
+    for(let prop in obj){
+        if(prop == "_id") continue;
+        if(obj.hasOwnProperty(prop)){
+            res[prop] = obj[prop];
+        }
+    }
+    return res;
+}
+
 async function getLatestBlockCount(){
     if(use_rest_api){
         let r = await client.getBlockchainInformation();
@@ -598,7 +609,7 @@ module.exports = {
 
             if(last_good_block == -1){
                 obj.message = 'failure: not enough backup blocks!';
-                dal.logEvent(obj, 'ROLLBACK', dal.LOG_LEVEL_FATAL);
+                dal.logEvent(cloneObj(obj), 'ROLLBACK', dal.LOG_LEVEL_FATAL);
 
                 dbg.throw_error('rollback failure: not enough backup blocks!'); 
             }
@@ -615,7 +626,7 @@ module.exports = {
             pending_txids.clear();
 
             obj.message = 'done';
-            dal.logEvent( obj, 'ROLLBACK', dal.LOG_LEVEL_WARN);
+            dal.logEvent( cloneObj(obj), 'ROLLBACK', dal.LOG_LEVEL_WARN);
 
             debug.warn(`blockchain is rolled back to ${last_good_block} successfully!`);
         }
