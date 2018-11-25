@@ -56,18 +56,19 @@ return init().then( sample_run )
     .catch(err => {
         debug.err(err.message);
 
-        await dal.logEvent({
+        return dal.logEvent({
             message: err.message,
             code: 'ERROR',
             level: dal.LOG_LEVEL_ERROR
-        });
+        }).then(()=>{
+            process.exitCode = -1;
+            
+            api.setStatus(`ERROR: ${err.message}`);
 
-        process.exitCode = -1;
-        
-        api.setStatus(`ERROR: ${err.message}`);
+            if(+process.env.EXIT_ON_ERROR){
+                process.kill(process.pid, "SIGINT");
+            }
+        })
 
-        if(+process.env.EXIT_ON_ERROR){
-            process.kill(process.pid, "SIGINT");
-        }
     }).then(dal.close);
     
