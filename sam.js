@@ -599,11 +599,13 @@ module.exports = {
             let blks = await dal.getBackupBlocks();
             for(let i = blks.length-1; i >= 0; i--){
                 let blk = blks[i];
-                let blk_hash = await client.getBlockHash(blk._id);
-                if(blk_hash == blk.hash){
-                    last_good_block = blk._id;
-                    last_good_block_hash = blk_hash;
-                    break;
+                if(blk._id <= latest_block){
+                    let blk_hash = await client.getBlockHash(blk._id);
+                    if(blk_hash == blk.hash){
+                        last_good_block = blk._id;
+                        last_good_block_hash = blk_hash;
+                        break;
+                    }
                 }
             }
 
