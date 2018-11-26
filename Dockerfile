@@ -7,4 +7,6 @@ COPY . /home/node
 USER node
 WORKDIR /home/node
 
-CMD ["node", "index.js"]
+ENV MAX_HEAP_SIZE=2048
+
+CMD ["./entry.sh"]
