@@ -640,7 +640,7 @@ module.exports = {
 
                 //in case the previous session is not completed.
                 //avoid rollback twice if just rollback before.
-                if(last_good_block != -1) await dal.rollback(last_recorded_blocks);
+                if(last_good_block == -1) await dal.rollback(last_recorded_blocks);
             }
 
             let i = last_recorded_blocks + 1; //start blk# of this batch
