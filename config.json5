@@ -4,6 +4,12 @@
     // It could take longer time when the in-memory coins are huge.
     coins_spent_in_mem_cancel: false, 
 
+    //minimum time a pending tx must be kept in pending tables before it can be detected as rejected.
+    //sometimes when a pending tx appears in mempool, its inputs might not be available on blockchain yet, 
+    //so we must be patient and wait enough time before starting check if its inputs are available on blockchain. 
+    //if after a long time waiting, one of its inputs is still missing, it can be tagged as rejected.
+    min_pending_time: 36000, //10 hours
+
     coins: {//coin_traits
         bpx: { 
             apis: ["getrawmempool"],

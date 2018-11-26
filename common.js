@@ -45,6 +45,9 @@ function resolve_config(){
     //Batch upgrade size
     config.batch_upgradeV1toV2 = + process.env.BATCH_UPGRADEV1TOV2 || 100;
     if(config.batch_upgradeV1toV2 < 1) config.batch_upgradeV1toV2 = 100;
+
+    config.min_pending_time = + process.env.MIN_PENDING_TIME || +config.min_pending_time;
+    if(config.min_pending_time < 3600) config.min_pending_time = 3600; //1h at least
 }
 
 resolve_config();

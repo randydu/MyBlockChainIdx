@@ -495,31 +495,34 @@ module.exports = {
             backup_spent_coins: database.collection("backup_spent_coins"),
         }
 
+        let stNow = Date.now()/1000;
+
         async function search_rejected_txs(collectionName){
             let spents = await database.collection(collectionName).find().toArray();
             if(spents.length > 0){
                 for(let i = 0; i < spents.length; i++){
                     let sp = spents[i];
+                    
+                    let t = sp._id.getTimestamp().getTime()/1000;
+                    if(stNow - t > config.min_pending_time){ //tx must be kept in pending queue for enough time period before it can be detected as rejected.
+                        if(!rejects.has(sp.tx_id)){
+                            async function coin_found(name){
+                                if((name == "coins_multisig" || name == "pending_coins_multisig") && (!config.coin_traits.MULTISIG)) return false;
 
-                    if(!rejects.has(sp.tx_id)){
-                        
+                                return await collections[name].countDocuments({tx_id: sp.spent_tx_id, pos: sp.pos}) > 0;
+                            }
 
-                        async function coin_found(name){
-                            if((name == "coins_multisig" || name == "pending_coins_multisig") && (!config.coin_traits.MULTISIG)) return false;
-
-                            return await collections[name].countDocuments({tx_id: sp.spent_tx_id, pos: sp.pos}) > 0;
-                        }
-
-                        if( !await coin_found("coins") &&
-                            !await coin_found("coins_noaddr") &&
-                            !await coin_found("coins_multisig") &&
-                            !await coin_found("pending_coins") &&
-                            !await coin_found("pending_coins_noaddr") &&
-                            !await coin_found("pending_coins_multisig") &&
-                            !await coin_found("backup_spent_coins") 
-                        ){
-                            //spent missing, must have been consumed by another transaction on blockchain!
-                            rejects.add(sp.tx_id);
+                            if( !await coin_found("coins") &&
+                                !await coin_found("coins_noaddr") &&
+                                !await coin_found("coins_multisig") &&
+                                !await coin_found("pending_coins") &&
+                                !await coin_found("pending_coins_noaddr") &&
+                                !await coin_found("pending_coins_multisig") &&
+                                !await coin_found("backup_spent_coins") 
+                            ){
+                                //spent missing, must have been consumed by another transaction on blockchain!
+                                rejects.add(sp.tx_id);
+                            }
                         }
                     }
                 }
