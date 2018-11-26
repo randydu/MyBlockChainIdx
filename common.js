@@ -61,7 +61,7 @@ function create_debug(name){
         err: dbg(`${name}.err`),
         fatal: dbg(`${name}.fatal`),
 
-        throw_error: msg => {
+        throw_error(msg){
             this.err(msg);
             throw new Error(msg);
         }
