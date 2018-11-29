@@ -4,8 +4,8 @@
   "description": "MyIndex Sampler",
   "main": "index.js",
   "scripts": {
-    "build-docker": "docker build -t docker.yummy.net/tcoin-sam:v1.0.0 .",
-    "push-docker": "docker push docker.yummy.net/tcoin-sam:v1.0.0",
+    "build-docker": "docker build -t docker.yummy.net/tcoin-sam:v1.0 .",
+    "push-docker": "docker push docker.yummy.net/tcoin-sam:v1.0",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

@@ -26,9 +26,12 @@ module.exports = {
             };
         });
 
-        app.listen(port, function(){
+        let server = app.listen(port, function(){
             console.log(`API server listening on port ${port}`);
         });
+
+        server.keepAliveTimeout = 30000; //30s 
+        server.timeout = 30000; //30s 
     },
 
     setStatus(st){
