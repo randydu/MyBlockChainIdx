@@ -1,0 +1,6 @@
+FROM mongo:4.0.4-xenial
+
+LABEL maintainer="Randy Du (randydu@gmail.com)"
+
+RUN useradd -m -U -u 1000 ubuntu
+USER ubuntu
