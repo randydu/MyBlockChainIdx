@@ -56,13 +56,25 @@ async function getLatestBlockCount(){
         return client.getBlockCount();
     }
 }
-
+/**
+ * Get decoded transaction information by tx-id
+ * 
+ * @param {string} txid - transaction id
+ * @returns decoded transaction information
+ *  
+ *  BPX-specific:
+ *      - height: bpx has a height field;
+ *      - value unit: bpx returns vout.value as SAT instead of BPX with rpc param "value_unit" = 1
+ */
 async function getTransactionInfo(txid){
     if(use_rest_api){
         return client.getTransactionByHash(txid);
     }else{
         return is_BPX ? 
-            client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1, 0, 1) : ///< returns value in SAT to avoid conversion precision error
+            /**
+             * returns value in SAT to avoid conversion precision error
+             */ 
+            client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1, 0, 1 /* value_unit: 0: BPX, 1: SAT*/) : 
             client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1);
     }
 }
