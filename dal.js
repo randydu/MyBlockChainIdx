@@ -166,13 +166,16 @@ module.exports = {
 
                 database.collection('pending_spents').createIndexes([
                     { key: { address: 1 }, name: "idx_addr" }, 
+                    { key: {height: 1}, name: "idx_height" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
                 ]),
                 support_multisig? database.collection('pending_spents_multisig').createIndexes([
                     { key: { addresses: 1 }, name: "idx_addr" }, 
+                    { key: {height: 1}, name: "idx_height" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
                 ]): Promise.resolve(),
                 database.collection('pending_spents_noaddr').createIndexes([
+                    { key: {height: 1}, name: "idx_height" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
                 ]),
                 database.collection('pending_coins').createIndexes([

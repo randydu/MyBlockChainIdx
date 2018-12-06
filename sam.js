@@ -63,6 +63,21 @@ async function getTransactionInfo(txid){
     }
 }
 
+async function getBlockHeight(blk_hash){
+    let blk_info = null;
+    if(use_rest_api){
+        blk_info = await client.getBlockByHash(blk_hash);
+    }else{
+        blk_info = await client.getBlock(blk_hash, coin_traits.getblock_verbose_bool ? true : 1);
+    }
+    if(blk_info != null){
+        return +blk_info.height;
+    }else{
+        debug.warn(`getBlockHeight: blk_hash [${blk_hash}] not found!`);
+        return -1;
+    }
+}
+
 async function process_tis(blk_tis){
     //spents of txs on blockchain
     let spents_remove = [];
@@ -208,6 +223,13 @@ async function process_tis(blk_tis){
                                         let out = tx_spent.vout[spent.vout];
                                         let vCoin = new BigNumber(out.value); 
                                         obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
+
+                                        /**
+                                         * we have tx_spent.confirmations, which can calculate the height = latest_blk - confirmations + 1
+                                         * but the latest_blk might not be the same value RPC-api used to calculate the confirmations, so we
+                                         * have to rely on api to figure out the right answer 
+                                         */
+                                        obj.height = await getBlockHeight(tx_spent.blockhash);
 
                                         if(typeof out.scriptPubKey.addresses === 'undefined'){
                                             obj.script = out.scriptPubKey;
