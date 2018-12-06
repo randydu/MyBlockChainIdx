@@ -59,6 +59,9 @@ async function getLatestBlockCount(){
 /**
  * Get decoded transaction information by tx-id
  * 
+ * WARN: the conversion of vout.value from internal SAT to external coin unit (BTC/LTC/BCH, etc.) will
+ * introduce precision error, BPX has added extra RPC param (value_unit) to avoid the conversion.
+ * 
  * @param {string} txid - transaction id
  * @returns decoded transaction information
  *  
