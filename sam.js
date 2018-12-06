@@ -8,6 +8,8 @@ const debug = common.create_debug('sam');
 
 const config = common.config;
 const node = config.node;
+const is_BPX = node.coin == 'bpx'; ///< we are sampling BlocPal blockchain
+
 const coin_traits = config.coin_traits;
 const support_payload = coin_traits.payload;
 const use_rest_api = config.use_rest_api;
@@ -59,7 +61,24 @@ async function getTransactionInfo(txid){
     if(use_rest_api){
         return client.getTransactionByHash(txid);
     }else{
-        return client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1);
+        return is_BPX ? 
+            client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1, 0, 1) : ///< returns value in SAT to avoid conversion precision error
+            client.getRawTransaction(txid, coin_traits.getrawtransaction_verbose_bool ? true : 1);
+    }
+}
+
+/**
+ * Convert the vout.value to amount in SAT
+ * 
+ * @param {vout} vout - transaction's vout object 
+ * @returns {string} string of amount in SAT
+ */
+function getVoutAmount(vout){
+    if(is_BPX){
+        return vout.value.toString(); ///< BPX alreadys returns SAT! 
+    }else{
+        let vCoin = new BigNumber(vout.value); 
+        return vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
     }
 }
 
@@ -221,15 +240,19 @@ async function process_tis(blk_tis){
                                         dbg.warn(obj.message);
                                     } else {
                                         let out = tx_spent.vout[spent.vout];
-                                        let vCoin = new BigNumber(out.value); 
-                                        obj.value = vCoin.multipliedBy(coin_traits.SAT_PER_COIN).toString();
+                                        obj.value = getVoutAmount(out);
 
                                         /**
                                          * we have tx_spent.confirmations, which can calculate the height = latest_blk - confirmations + 1
                                          * but the latest_blk might not be the same value RPC-api used to calculate the confirmations, so we
                                          * have to rely on api to figure out the right answer 
                                          */
-                                        obj.height = await getBlockHeight(tx_spent.blockhash);
+                                        if(tx_spent.height){
+                                            //BPX (maybe other coin?) has "height" field from getrawtransaction().
+                                            obj.height = +tx_spent.height;
+                                        } else {
+                                            obj.height = await getBlockHeight(tx_spent.blockhash);
+                                        }
 
                                         if(typeof out.scriptPubKey.addresses === 'undefined'){
                                             obj.script = out.scriptPubKey;
@@ -263,14 +286,12 @@ async function process_tis(blk_tis){
                 for(let j = 0; j < outs.length; j++){
                     let out = outs[j];
                     if(out.value >= 0){//only save non-zero utxo
-                        let vCoin = new BigNumber(out.value);
-                        vCoin = vCoin.multipliedBy(coin_traits.SAT_PER_COIN);
-
                         let obj = {
                             tx_id: txid,
                             pos: j, //the j'th output in the tx
-                            value: vCoin.toString(),
+                            value: getVoutAmount(out),
                         };
+
                         if(!pending) obj.height = height; //pending_xxx does not have height field.
 
                         if(typeof out.scriptPubKey.addresses === 'undefined'){//no-address
@@ -498,7 +519,7 @@ async function sample_batch(nStart, nEnd /* exclude */) {
             let txs = blk_info.tx;
 
             for(let j = 0; j < txs.length; j++){
-                let ti = await client.getRawTransaction(txs[j], coin_traits.getrawtransaction_verbose_bool ? true : 1);
+                let ti = await getTransactionInfo(txs[j]);
                 item.tis.push(ti);
             }
 
