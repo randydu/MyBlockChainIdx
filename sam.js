@@ -541,7 +541,6 @@ async function check_rejection(){
 }
 
 let start_blk_hash = null; //rest-only
-let end_blk_hash = null; //last recorded block hash
 
 /**
  * nStart: block_hash(nStart) == start_blk_hash; (REST)
@@ -580,14 +579,10 @@ async function sample_blocks(nStart, nEnd /* exclude */) {
             }
         }
         start_blk_hash = hdrs[nEnd-nStart-1].nextblockhash;
-        end_blk_hash = hdrs[nEnd-nStart-1].hash;
     }else{
         //rpc-api
         for(let i = nStart; i < nEnd; i++){
             let blk_hash = await client.getBlockHash(i);
-            if(i == nEnd-1){
-                end_blk_hash = blk_hash;
-            }
 
             if(latest_block - i < coin_traits.max_confirms){
                 blks.push({
@@ -801,12 +796,6 @@ module.exports = {
                 if(this.stop) break;
 
                 await sample_blocks(i, j);
-
-                //await dal.setLastRecordedBlockHeight(j-1);
-                //await dal.setLastRecordedBlockInfo({
-                //    height: j-1,
-                //    hash: end_blk_hash
-                //});
 
                 i = j;
                 j = i + config.batch_blocks;                
