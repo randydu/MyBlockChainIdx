@@ -437,17 +437,21 @@ let packer = function(){
             if(pk_counter > 0){
                 let N = pk_tis.length;
                 if(N > 1){
-                    debug.info('parsing blk #%d to blk (#%d: %d%%)...',  pk_tis[0].height, pk_tail.height, pk_tail.count * 100 / pk_tail.total_txs );
+                    debug.info(`parsing blk #${pk_tis[0].height} to blk (#${pk_tail.height}: ${(pk_tail.count * 100 / pk_tail.total_txs).toFixed(2)}%)...`);
                 }else{
-                    debug.info('parsing blk (#%d: %d%%)...',  obj.height, pk_tail.count * 100 / pk_tail.total_txs);
+                    debug.info(`parsing blk (#${pk_tail.height}: ${(pk_tail.count * 100 / pk_tail.total_txs).toFixed(2)}%)...`);
                 }
                 await process_tis(pk_tis);
 
-                pk_counter = 0;
-
-                //height & blk_hash & total_txs & last_ti & count kept for more incoming txs of the same block
-                pk_tail.tis = [];
-                pk_tis = [pk_tail];
+                if(pk_tail.total_txs == pk_tail.count){
+                    //no pending tx to the previous block
+                    this.init();
+                }else{
+                    pk_counter = 0;
+                    //height & blk_hash & total_txs & last_ti & count kept for more incoming txs of the same block
+                    pk_tail.tis = [];
+                    pk_tis = [pk_tail];
+                }
             }
         },
 
@@ -460,6 +464,13 @@ let packer = function(){
          * @param {obj} ti - transaction info 
          */
         async add_ti(height, blk_hash, total_txs, ti){
+            /*
+            if(height > 50984){
+                await this.flush();
+                console.log('DONE!!!');
+                debug.throw_error('50984 reached!');
+            }*/
+
             if(pk_tail.height != height){//new block
                 pk_tail = {
                     height,
@@ -501,8 +512,7 @@ async function sample_pendings(){
 
         let N = new_txids.length;
         if(N > 0){
-            for(let i = 0; i < N; i++){
-                let txid = new_txids[i];
+            for(const txid of new_txids){
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){
                     dbg.throw_error(`transaction [${txid}]  not found!`);
@@ -510,7 +520,7 @@ async function sample_pendings(){
                 await packer.add_ti(-1, '', N, ti);
             };
 
-            await packer.flush_blk_tis();
+            await packer.flush();
 
             //now update on success
             new_txids.forEach(txid => {
@@ -687,6 +697,7 @@ module.exports = {
         latest_block = await getLatestBlockCount();
         debug.info(`latest block: ${latest_block}`);
 
+
         //detect if the last recorded block is a valid one
         let last_recorded_blocks = null;
         let last_recorded_bi = await dal.getLastRecordedBlockInfo();
@@ -697,6 +708,8 @@ module.exports = {
         }
         if(last_recorded_blocks == null) last_recorded_blocks = -1; 
         debug.info(`latest recorded block: ${last_recorded_blocks}`);
+
+
 
         let obj = {
             last_recorded_blocks,
@@ -775,7 +788,7 @@ module.exports = {
 
                 //in case the previous session is not completed.
                 //avoid rollback twice if just rollback before.
-                if(last_good_block == -1) await dal.rollback(last_recorded_blocks);
+                if(last_good_block == -1 && last_recorded_blocks >=0) await dal.rollback(last_recorded_blocks);
             }
 
             let i = last_recorded_blocks + 1; //start blk# of this batch
@@ -799,7 +812,7 @@ module.exports = {
                 j = i + config.batch_blocks;                
                 if(j > latest_block) j = latest_block + 1; //last batch
             }
-            await flush_blk_tis(); //process partial left items
+            await packer.flush(); //process partial left items
 
             postStatus('OK');
 
