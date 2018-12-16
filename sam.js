@@ -10,6 +10,7 @@ const config = common.config;
 const node = config.node;
 const is_BPX = node.coin == 'bpx'; ///< we are sampling BlocPal blockchain
 
+
 const coin_traits = config.coin_traits;
 const support_payload = coin_traits.payload;
 const use_rest_api = config.use_rest_api;
@@ -132,13 +133,21 @@ async function process_tis(blk_tis){
 
     let logs = [];
 
+    let last_blk_done_height = -1; //all txs of block are processed
+    let last_blk_done_hash = '';
+
     let pending = false;
 
     for(let k = 0; k < blk_tis.length; k++){
-        let { height, tis } = blk_tis[k];
-        
+        let { height, blk_hash, tis, count, total_txs } = blk_tis[k];
+
         if(height < 0) pending = true;
-        
+
+        if(!pending && (count == total_txs)){
+            last_blk_done_height = height;
+            last_blk_done_hash = blk_hash;
+        } 
+
         const N = tis.length;
 
         for(let i = 0; i < N; i++){
@@ -146,7 +155,7 @@ async function process_tis(blk_tis){
             let tx_info = tis[i];
             let txid = tx_info.txid;
 
-            debug.trace('height[%d] >> [%d/%d] txid: %s', height, i, N, txid);
+            //debug.trace('height[%d] >> [%d/%d] txid: %s', height, i, N, txid);
 
             txids.push(txid);
             /**
@@ -365,6 +374,14 @@ async function process_tis(blk_tis){
         await dal.removeSpents(spents_remove);
         await dal.backupSpents(spents_backup);
 
+        //now we have fully processed a block!
+        if(last_blk_done_height > 0){
+            await dal.setLastRecordedBlockInfo({
+                height: last_blk_done_height,
+                hash: last_blk_done_hash
+            })
+        }
+
     } else { //pending
         if(first_time_save_pendings){
             //avoid key-collision in case the pending tx is already saved in database in last session
@@ -398,6 +415,75 @@ async function process_tis(blk_tis){
     */
 }
 
+let packer = function(){
+    let max_txs = +config.max_txs;
+    if(max_txs <= 0) max_txs = 100;
+
+    debug.info(`max_txs = ${max_txs}`);
+
+    let pk_tis; //pack of {height, tis} to process
+    let pk_counter; //total txs in pk_tis
+    let pk_tail; //tail of pk_tis
+
+    //public:
+    return {
+        init(){
+            pk_tis = [];
+            pk_counter = 0;
+            pk_tail = { height: -2 }//just start with an invalid height (-1 reserved for pendings)
+        },
+
+        async flush(){
+            if(pk_counter > 0){
+                let N = pk_tis.length;
+                if(N > 1){
+                    debug.info('parsing blk #%d to blk (#%d: %d%%)...',  pk_tis[0].height, pk_tail.height, pk_tail.count * 100 / pk_tail.total_txs );
+                }else{
+                    debug.info('parsing blk (#%d: %d%%)...',  obj.height, pk_tail.count * 100 / pk_tail.total_txs);
+                }
+                await process_tis(pk_tis);
+
+                pk_counter = 0;
+
+                //height & blk_hash & total_txs & last_ti & count kept for more incoming txs of the same block
+                pk_tail.tis = [];
+                pk_tis = [pk_tail];
+            }
+        },
+
+        /**
+         * Cache and process a transaction
+         * 
+         * @param {int} height - block height 
+         * @param {string} blk_hash - block #height's hash 
+         * @param {int} total_txs - total transactions in the block
+         * @param {obj} ti - transaction info 
+         */
+        async add_ti(height, blk_hash, total_txs, ti){
+            if(pk_tail.height != height){//new block
+                pk_tail = {
+                    height,
+                    blk_hash,
+                    total_txs,
+                    tis: [ti],
+                    count: 1,
+                }
+                pk_tis.push(pk_tail);
+            }else{
+                pk_tail.tis.push(ti);
+                pk_tail.count++;
+
+                if(pk_tail.count > pk_tail.total_txs) debug.throw_error(`blk #${pk_tail.height}: more tx than expected ${pk_tail.total_txs}!`);
+            }
+     
+            pk_counter++;
+            if(pk_counter >= max_txs){
+                await this.flush();
+            }
+        },
+    }
+}();
+
 async function sample_pendings(){
     debug.info('check pendings >>');
 
@@ -413,21 +499,18 @@ async function sample_pendings(){
             });
         }else new_txids = txids;
 
-        let tis = [];
-        if(new_txids.length > 0){
-            for(let i = 0; i < new_txids.length; i++){
+        let N = new_txids.length;
+        if(N > 0){
+            for(let i = 0; i < N; i++){
                 let txid = new_txids[i];
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){
                     dbg.throw_error(`transaction [${txid}]  not found!`);
                 }
-                tis.push(ti);
+                await packer.add_ti(-1, '', N, ti);
             };
 
-            await process_tis([{
-                height: -1, //pending
-                tis: tis
-            }]);
+            await packer.flush_blk_tis();
 
             //now update on success
             new_txids.forEach(txid => {
@@ -455,8 +538,7 @@ let end_blk_hash = null; //last recorded block hash
  * nEnd: next start of batch
  */
 
-async function sample_batch(nStart, nEnd /* exclude */) {
-    let blk_tis = [];
+async function sample_blocks(nStart, nEnd /* exclude */) {
     let blks = [];
 
     debug.info(`sync [${nStart}, ${nEnd})...`);
@@ -468,31 +550,30 @@ async function sample_batch(nStart, nEnd /* exclude */) {
         }
         let hdrs = await client.getBlockHeadersByHash(start_blk_hash, nEnd - nStart);
         for(let i = nStart; i < nEnd; i++){
+            let blk_hash = hdrs[i-nStart].hash;
             if(latest_block - i < coin_traits.max_confirms){
                 blks.push({
                     _id: i,
-                    hash: hdrs[i-nStart].hash
+                    hash: blk_hash
                 });
             }
 
-            let blk_info = await client.getBlockByHash(hdrs[i-nStart].hash);
+            let blk_info = await client.getBlockByHash(blk_hash);
 
             if(blk_info.height != i){
                 dbg.throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
             }
 
-            blk_tis.push({
-                height: i,
-                tis: blk_info.tx //tx_info already populated by REST-api
-            });
+            let N = blk_info.tx.length; 
+            for(const ti of blk_info.tx){
+                await packer.add_ti(i, blk_hash, N, ti);
+            }
         }
         start_blk_hash = hdrs[nEnd-nStart-1].nextblockhash;
         end_blk_hash = hdrs[nEnd-nStart-1].hash;
     }else{
         //rpc-api
         for(let i = nStart; i < nEnd; i++){
-            let item = { height: i, tis: [] };
-
             let blk_hash = await client.getBlockHash(i);
             if(i == nEnd-1){
                 end_blk_hash = blk_hash;
@@ -531,23 +612,15 @@ async function sample_batch(nStart, nEnd /* exclude */) {
                 ]
             }
             */
-            let txs = blk_info.tx;
-
-            for(let j = 0; j < txs.length; j++){
-                let ti = await getTransactionInfo(txs[j]);
-                item.tis.push(ti);
+            let N = blk_info.tx.length;
+            for(const txid of blk_info.tx){
+                let ti = await getTransactionInfo(txid);
+                await packer.add_ti(i, blk_hash, N, ti);
             }
-
-            blk_tis.push(item);
         }    
     }
 
-    await process_tis(blk_tis);
     if(blks.length > 0) await dal.addBackupBlocks(blks);
-
-    //manually release resources
-    //blk_tis.forEach(x => { x.tis.length = 0; });
-    //blk_tis.length = 0;
 
     debug.info(`sync [${nStart}, ${nEnd}) done!`);
 }
@@ -608,6 +681,8 @@ module.exports = {
 
     async run(){
         debug.info('sam.run >> ');
+
+        packer.init();
 
         latest_block = await getLatestBlockCount();
         debug.info(`latest block: ${latest_block}`);
@@ -712,37 +787,42 @@ module.exports = {
             while(i <= latest_block){
                 if(this.stop) break;
 
-                await sample_batch(i, j);
+                await sample_blocks(i, j);
 
                 //await dal.setLastRecordedBlockHeight(j-1);
-                await dal.setLastRecordedBlockInfo({
-                    height: j-1,
-                    hash: end_blk_hash
-                });
+                //await dal.setLastRecordedBlockInfo({
+                //    height: j-1,
+                //    hash: end_blk_hash
+                //});
 
                 i = j;
                 j = i + config.batch_blocks;                
                 if(j > latest_block) j = latest_block + 1; //last batch
             }
-        }
+            await flush_blk_tis(); //process partial left items
 
-        postStatus('OK');
+            postStatus('OK');
 
-        if(!this.stop){
-            //pendings
-            await sample_pendings();
-        }
-        if(!this.stop){
-            //rejection
-            await check_rejection();
-        }
+            //catch up with latest block first.
+            //the latest block maybe changed, so just return for next round.
+            //otherwise the pending txs in mempool might refer to unprocessed coins.
+        } else {
+            if(!this.stop){
+                //pendings
+                await sample_pendings();
+            }
+            if(!this.stop){
+                //rejection
+                await check_rejection();
+            }
 
-        if(!this.stop){
-            //retire backup blocks and spents
-            await Promise.all([
-                dal.retireBackupBlocks(latest_block - config.coin_traits.max_confirms),
-                dal.retireBackupSpents(latest_block - config.coin_traits.max_confirms),
-            ]);
+            if(!this.stop){
+                //retire backup blocks and spents
+                await Promise.all([
+                    dal.retireBackupBlocks(latest_block - config.coin_traits.max_confirms),
+                    dal.retireBackupSpents(latest_block - config.coin_traits.max_confirms),
+                ]);
+            }
         }
 
         debug.info('sam.run << ');
