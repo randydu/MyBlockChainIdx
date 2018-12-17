@@ -416,7 +416,7 @@ async function process_tis(blk_tis){
 }
 
 let packer = function(){
-    let max_txs = +config.max_txs;
+    let max_txs = (typeof config.max_txs === 'undefined') ? 100 : +config.max_txs;
     if(max_txs <= 0) max_txs = 100;
 
     debug.info(`max_txs = ${max_txs}`);
