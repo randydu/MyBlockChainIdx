@@ -253,7 +253,7 @@ async function process_tis(blk_tis){
                                     obj.code = 'TX_NOT_FOUND';
                                     logs.push(obj);
 
-                                    dbg.warn(obj.message);
+                                    debug.warn(obj.message);
                                 } else {
                                     if(tx_spent.vout.length <= spent.vout){
                                         obj.code = 'SPENT_NOT_FOUND';
@@ -261,21 +261,25 @@ async function process_tis(blk_tis){
                                         obj.message = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
                                         logs.push(obj);
 
-                                        dbg.warn(obj.message);
+                                        debug.warn(obj.message);
                                     } else {
                                         let out = tx_spent.vout[spent.vout];
                                         obj.value = getVoutAmount(out);
 
-                                        /**
-                                         * we have tx_spent.confirmations, which can calculate the height = latest_blk - confirmations + 1
-                                         * but the latest_blk might not be the same value RPC-api used to calculate the confirmations, so we
-                                         * have to rely on api to figure out the right answer 
-                                         */
-                                        if(tx_spent.height){
-                                            //BPX (maybe other coin?) has "height" field from getrawtransaction().
-                                            obj.height = +tx_spent.height;
-                                        } else {
-                                            obj.height = await getBlockHeight(tx_spent.blockhash);
+                                        if(typeof tx_spent.blockhash === 'undefined'){
+                                            obj.height = -1; //in mempool
+                                        }else{
+                                            /**
+                                             * we have tx_spent.confirmations, which can calculate the height = latest_blk - confirmations + 1
+                                             * but the latest_blk might not be the same value RPC-api used to calculate the confirmations, so we
+                                             * have to rely on api to figure out the right answer 
+                                             */
+                                            if(tx_spent.height){
+                                                //BPX (maybe other coin?) has "height" field from getrawtransaction().
+                                                obj.height = +tx_spent.height;
+                                            } else {
+                                                obj.height = await getBlockHeight(tx_spent.blockhash);
+                                            }
                                         }
 
                                         if(typeof out.scriptPubKey.addresses === 'undefined'){
@@ -515,7 +519,7 @@ async function sample_pendings(){
             for(const txid of new_txids){
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){
-                    dbg.throw_error(`transaction [${txid}]  not found!`);
+                    debug.throw_error(`transaction [${txid}]  not found!`);
                 }
                 await packer.add_ti(-1, '', N, ti);
             };
@@ -570,7 +574,7 @@ async function sample_blocks(nStart, nEnd /* exclude */) {
             let blk_info = await client.getBlockByHash(blk_hash);
 
             if(blk_info.height != i){
-                dbg.throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
+                debug.throw_error(`block height mismatch, expected: ${i} got: ${blk_info.height}`);
             }
 
             let N = blk_info.tx.length; 
@@ -729,7 +733,7 @@ module.exports = {
 
         let last_good_block = -1;
         if(to_rollback){
-            //dbg_throw_error("ROLLBACK detected, PLEASE DEBUG ME!");
+            //debug_throw_error("ROLLBACK detected, PLEASE DEBUG ME!");
 
             obj.message = 'start';
             await dal.logEvent( obj, 'ROLLBACK', dal.LOG_LEVEL_WARN);
@@ -754,7 +758,7 @@ module.exports = {
                 obj.message = 'failure: not enough backup blocks!';
                 await dal.logEvent(cloneObj(obj), 'ROLLBACK', dal.LOG_LEVEL_FATAL);
 
-                dbg.throw_error('rollback failure: not enough backup blocks!'); 
+                debug.throw_error('rollback failure: not enough backup blocks!'); 
             }
 
             obj.last_good_block = last_good_block;

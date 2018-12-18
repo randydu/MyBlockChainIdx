@@ -98,7 +98,7 @@ module.exports = {
         
         client = await MongoClient.connect(mongodb_url, { useNewUrlParser: true });
         if(!client.isConnected()){
-            dbg.throw_error("database not connected!");
+            debug.throw_error("database not connected!");
         }
 
         database = client.db('myidx');
@@ -112,7 +112,7 @@ module.exports = {
                 let ver = await this.getDBVersion();
                 if(ver != LATEST_DB_VERSION){
                     //database version mismatch
-                    dbg.throw_error(`Database version mismatch, the version expected: [${LATEST_DB_VERSION}] db_version: [${ver}], need to run upgrade once!`);
+                    debug.throw_error(`Database version mismatch, the version expected: [${LATEST_DB_VERSION}] db_version: [${ver}], need to run upgrade once!`);
                 }
             }
 
@@ -248,7 +248,7 @@ module.exports = {
             await setLastValue("coin", ci);
         }else{
             if(ci.coin != pre_ci.coin || ci.network != pre_ci.network){
-                dbg.throw_error("coin info mismatch!");
+                debug.throw_error("coin info mismatch!");
             }
         }
     },
@@ -599,12 +599,12 @@ module.exports = {
         ]);
     },
     //-------------- V1 => V2 ---------------
-    async upgradeV1toV2(dbg){
+    async upgradeV1toV2(debug){
         //check if coin_v1 already exists, in case we may pick up from previous incomplete upgrading.
         let has_coins_v1 = (await database.collections()).some(x => x.collectionName == 'coins_v1');
 
         if(!has_coins_v1){
-            dbg.info('fresh new upgrade...');
+            debug.info('fresh new upgrade...');
             await database.collection('coins').rename('coins_v1');
         }
 
@@ -617,10 +617,10 @@ module.exports = {
 
         const last_upgrade_item = 'last_upgrade_item';
 
-        dbg.info('Counting total items to upgrade...');
+        debug.info('Counting total items to upgrade...');
         let tbCoinsV1 = database.collection('coins_v1');
         let N = await tbCoinsV1.countDocuments({});
-        dbg.info(`Total ${N} items to upgrade!`);
+        debug.info(`Total ${N} items to upgrade!`);
 
         if(N > 0){
             let tbCoins = database.collection('coins');
@@ -632,7 +632,7 @@ module.exports = {
                 i = 0;
             } 
             if(i < N){
-                dbg.info(`delete all *dirty* items in target table from item[${i}]...`);
+                debug.info(`delete all *dirty* items in target table from item[${i}]...`);
                 let item = await tbCoinsV1.find().sort({_id:1}).skip(i).next();
                 await tbCoins.deleteMany({_id: {$gte: Long.fromInt(item._id)}});
             }
@@ -643,7 +643,7 @@ module.exports = {
             while(i < N) {
                 if(stopping) break;
 
-                dbg.info(`upgrading [${i}, ${j})...`);
+                debug.info(`upgrading [${i}, ${j})...`);
 
                 let items = await tbCoinsV1.find().sort({_id: 1}).skip(i).limit(j-i).toArray();
                 items.forEach(x => { x._id = Long.fromInt(x._id) });
@@ -660,19 +660,19 @@ module.exports = {
 
             let M = await getLastValue(last_upgrade_item);
             if( M == N-1){
-                //dbg.info("Upgrade Successfully! (FAKE)");
+                //debug.info("Upgrade Successfully! (FAKE)");
                 //return; 
                 //complete upgrade
                 await tbCoinsV1.drop();
                 await deleteLastValue(last_upgrade_item);
                 await this.setDBVersion(LATEST_DB_VERSION);
 
-                dbg.info("V1=>V2 Upgrade Successfully!");
+                debug.info("V1=>V2 Upgrade Successfully!");
             }
         }
     },
     //-------------- V2 => V3 ---------------
-    async upgradeV2toV3(dbg){
+    async upgradeV2toV3(debug){
         //errors => coins_noaddr
         await database.createCollection('coins_noaddr');
         await database.collection('coins_noaddr').createIndexes([
@@ -682,10 +682,10 @@ module.exports = {
 
         const last_upgrade_item = 'last_upgrade_item';
 
-        dbg.info('Counting total items to upgrade...');
+        debug.info('Counting total items to upgrade...');
         let tbErrors = database.collection('errors');
         let N = await tbErrors.countDocuments({});
-        dbg.info(`Total ${N} items to upgrade!`);
+        debug.info(`Total ${N} items to upgrade!`);
 
         let done = false;
 
@@ -700,7 +700,7 @@ module.exports = {
                 i = 0;
             } 
             if(i < N){
-                dbg.info(`delete all *dirty* items in target table from item[${i}]...`);
+                debug.info(`delete all *dirty* items in target table from item[${i}]...`);
                 await tbCoins.deleteMany({_id: {$gte: Long.fromInt(i)}});
             }
 
@@ -710,7 +710,7 @@ module.exports = {
             while(i < N) {
                 if(stopping) break;
 
-                dbg.info(`upgrading [${i}, ${j})...`);
+                debug.info(`upgrading [${i}, ${j})...`);
 
                 let items = await tbErrors.find().sort({_id: 1}).skip(i).limit(j-i).toArray();
 
@@ -748,7 +748,7 @@ module.exports = {
         }
 
         if(done){
-            //dbg.info("Upgrade Successfully! (FAKE)");
+            //debug.info("Upgrade Successfully! (FAKE)");
             //return; 
             //complete upgrade
             await this.setDBVersion(LATEST_DB_VERSION);
@@ -759,7 +759,7 @@ module.exports = {
                 await database.collection('summary').deleteOne({_id: 'lastBlockHeight'});
             }
 
-            dbg.info("V2=>V3 Upgrade Successfully!");
+            debug.info("V2=>V3 Upgrade Successfully!");
         }
     }
 }
