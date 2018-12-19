@@ -21,7 +21,6 @@
             supportGetBlockchainInfo: false,
             getblock_verbose_bool: true, //bool only
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
-            estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
 
             BIP34: true, //https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki
@@ -38,7 +37,6 @@
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //both bool & 1/0 works fine
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
-            estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
             
             BIP34: false, //only support from block #227,836
@@ -54,7 +52,6 @@
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: true, //bool only
             getrawtransaction_verbose_bool: false, //getrawtransaction(txid, verbose) verbose: int or bool
-            estimatefee_max_blocks_supported: 25, //the maximum blocks params returning positive value from RPC estimatefee(blocks)
             genesis_tx_connected: false, //genesis tx is not accounted
 
             BIP34: false,
@@ -70,7 +67,21 @@
             supportGetBlockchainInfo: true,
             getblock_verbose_bool: false, //both bool & 1/0 works fine
             getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
-            estimatefee_max_blocks_supported: 48, //the maximum blocks params returning positive value from RPC estimatefee(blocks)       
+            genesis_tx_connected: false, //genesis tx is not accounted
+
+            BIP34: false,
+            REST: true,
+            MULTISIG: true, //support address type "multisig"
+            max_confirms: 20, //the maximum confirmations that the block should be considered fully mined.
+        },
+        rvn: {
+            apis: ["getrawmempool"],
+            SAT_PER_COIN: 100000000,
+
+            payload: false,
+            supportGetBlockchainInfo: true,
+            getblock_verbose_bool: false, //both bool & 1/0 works fine
+            getrawtransaction_verbose_bool: true, //getrawtransaction(txid, verbose) verbose: int or bool
             genesis_tx_connected: false, //genesis tx is not accounted
 
             BIP34: false,
@@ -197,6 +208,32 @@
             "rpchost": "127.0.0.1",
             "rpcuser": "bpx",
             "rpcpassword": "88488848"
-        }
+        },
+        {
+            "id": "rvn-mainnet-docker",
+            coin: "rvn",
+            "description": "RVN main-net",
+            "network": "mainnet",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9540,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "rvn",
+            "rpcpassword": "cHASEtOPcOIN_2018"
+        },
+        {
+            "id": "rvn-testnet-docker",
+            coin: "rvn",
+            "description": "RVN test-net",
+            "network": "regtest",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 9541,
+            "rpchost": "127.0.0.1",
+            "rpcuser": "rvn",
+            "rpcpassword": "123"
+        },
     ],    
 }
