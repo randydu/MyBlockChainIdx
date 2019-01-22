@@ -4,7 +4,7 @@ const common = require('./common');
 
 const BigNumber = require('bignumber.js');
 
-const debug = common.create_debug('sam');
+const debug = require('mydbg')('sam');
 
 const config = common.config;
 const node = config.node;

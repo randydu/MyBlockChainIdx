@@ -26,7 +26,7 @@ const LOG_LEVEL_FATAL = 4;
 
 const BigNumber = require('bignumber.js');
 const common = require('./common');
-const debug = common.create_debug('dal');
+const debug = require('mydbg')('dal');
 const config = common.config;
 
 const Long = require('mongodb').Long;

@@ -55,21 +55,6 @@ resolve_config();
 
 const delay = (duration) => new Promise(resolve => setTimeout(resolve, duration));
 
-function create_debug(name){
-    const dbg = require('debug');
-    return {
-        trace: dbg(`${name}.trace`),
-        info: dbg(`${name}.info`),
-        warn: dbg(`${name}.warn`),
-        err: dbg(`${name}.err`),
-        fatal: dbg(`${name}.fatal`),
-
-        throw_error(msg){
-            this.err(msg);
-            throw new Error(msg);
-        }
-    };
-}
 
 //returns a promise executing input tasks (promises) in serial.
 function make_serial(tasks){
@@ -91,7 +76,6 @@ function add_apis(client, apis){
 module.exports = {
     config,
     delay,
-    create_debug,
     make_serial,
     add_apis,
 }

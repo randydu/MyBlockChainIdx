@@ -3,7 +3,7 @@
 require('dotenv').config({ path: __dirname + '/.env'});
 
 const common = require('./common');
-const debug = common.create_debug('index');
+const debug = require('mydbg')('index');
 
 const sample = require('./sam');
 const dal = require('./dal');
