@@ -43,15 +43,49 @@ function sample_run(){
     })
 }
 
+
 async function init(){
     await dal.init();
     await sample.init();
 }
 
+async function do_sample(){
+    await init();
+    
+    try {
+        while(!quit){
+            await sample.run();
+            if(!quit) await common.delay(sample_interval);
+        }
+    }catch(err){
+        debug.err(err.message);
+
+        await dal.logEvent({
+            message: err.message,
+            code: 'ERROR',
+            level: dal.LOG_LEVEL_ERROR
+        });
+        
+        process.exitCode = -1;
+        
+        quit = true; //stop sampling on error, report error status.
+        api.setStatus(`ERROR: ${err.message}`);
+
+        if(+process.env.EXIT_ON_ERROR){
+            process.kill(process.pid, "SIGINT");
+        }
+    }finally{
+        dal.close();
+    }
+    return quit ? -1 : 0;
+}
+
+
 if(+process.env.HTTP){
     api.run(process.env.HTTP_PORT);
 }
 
+/*
 return init().then( sample_run )
     .catch(err => {
         debug.err(err.message);
@@ -71,4 +105,6 @@ return init().then( sample_run )
         })
 
     }).then(dal.close);
-    
+*/
+
+return do_sample();
