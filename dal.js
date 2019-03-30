@@ -27,7 +27,11 @@ const LOG_LEVEL_FATAL = 4;
 const BigNumber = require('bignumber.js');
 const common = require('./common');
 const debug = require('mydbg')('dal');
+
 const config = common.config;
+const support_payload = config.coin_traits.payload;
+const support_multisig = config.coin_traits.MULTISIG;
+const resolve_spending = config.resolve_spending;
 
 const Long = require('mongodb').Long;
 const LONG_ONE = Long.fromInt(1);
@@ -103,9 +107,6 @@ module.exports = {
 
         database = client.db('myidx');
 
-        const support_payload = config.coin_traits.payload;
-        const support_multisig = config.coin_traits.MULTISIG;
-
         if(!do_upgrade){
             let lastBlockInfo = await this.getLastRecordedBlockInfo();
             if(lastBlockInfo != null ){
@@ -126,9 +127,10 @@ module.exports = {
                 support_multisig ? database.createCollection("pending_coins_multisig") : Promise.resolve(),
                 database.createCollection("pending_coins_noaddr"),
 
-                database.createCollection("pending_spents"),
-                support_multisig? database.createCollection("pending_spents_multisig") : Promise.resolve(),
-                database.createCollection("pending_spents_noaddr"),
+                resolve_spending ? database.createCollection("pending_spents") : Promise.resolve(),
+                resolve_spending && support_multisig? database.createCollection("pending_spents_multisig") : Promise.resolve(),
+                resolve_spending ? database.createCollection("pending_spents_noaddr"): Promise.resolve(),
+                resolve_spending ? Promise.resolve() : database.createCollection("pending_spents_bare"),
 
                 support_payload ? database.createCollection("payloads") : Promise.resolve(),
                 support_payload ? database.createCollection("pending_payloads") : Promise.resolve(),
@@ -164,20 +166,27 @@ module.exports = {
                     { key: {tx_id: 1, pos: 1}, name: "idx_xo", unique: true },
                 ]) : Promise.resolve(),
 
-                database.collection('pending_spents').createIndexes([
+                resolve_spending ? database.collection('pending_spents').createIndexes([
                     { key: { address: 1 }, name: "idx_addr" }, 
                     { key: {height: 1}, name: "idx_height" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
-                ]),
-                support_multisig? database.collection('pending_spents_multisig').createIndexes([
+                ]): Promise.resolve(),
+                resolve_spending && support_multisig? database.collection('pending_spents_multisig').createIndexes([
                     { key: { addresses: 1 }, name: "idx_addr" }, 
                     { key: {height: 1}, name: "idx_height" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
                 ]): Promise.resolve(),
-                database.collection('pending_spents_noaddr').createIndexes([
+                resolve_spending ? database.collection('pending_spents_noaddr').createIndexes([
                     { key: {height: 1}, name: "idx_height" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
+                ]): Promise.resolve(),
+
+                resolve_spending ? Promise.resolve() : database.collection('pending_spents_bare').createIndexes([
+                    { key: {spent_tx_id: 1, pos: 1}, name: "idx_spent_tx_pos" }, 
+                    { key: {tx_id: 1}, name: "idx_tx" }
                 ]),
+
+
                 database.collection('pending_coins').createIndexes([
                     { key: { address: 1 }, name: "idx_addr" }, 
                     { key: {tx_id: 1}, name: "idx_tx" } 
@@ -215,6 +224,12 @@ module.exports = {
             ]);
 
             await this.setDBVersion(LATEST_DB_VERSION);
+
+            await this.setDBTraits({
+                resolve_spending,
+                support_multisig,
+                support_payload,
+            });
         }
 
         debug.info("dal.init <<");
@@ -240,6 +255,9 @@ module.exports = {
 
     async setDBVersion(db_ver){
         await setLastValue("db_version", db_ver);
+    },
+    async setDBTraits(db_traits){
+        await setLastValue("db_traits", db_traits);
     },
 
     async setCoinInfo(ci){
@@ -330,7 +348,7 @@ module.exports = {
             await Promise.all([
                 database.collection("coins").bulkWrite( ops, no_order),
                 database.collection("coins_noaddr").bulkWrite( ops,no_order), 
-                config.coin_traits.MULTISIG ? database.collection("coins_multisig").bulkWrite( ops, no_order) : Promise.resolve(),
+                support_multisig ? database.collection("coins_multisig").bulkWrite( ops, no_order) : Promise.resolve(),
             ]);
         }
 
@@ -375,7 +393,7 @@ module.exports = {
 
             await Promise.all([
                 scanTable("coins", 0),
-                config.coin_traits.MULTISIG ? scanTable("coins_multisig", 1) : Promise.resolve(),
+                support_multisig ? scanTable("coins_multisig", 1) : Promise.resolve(),
                 scanTable("coins_noaddr", 2)
             ]);
 
@@ -412,6 +430,11 @@ module.exports = {
         await database.collection("backup_spent_coins").deleteMany({ height: {$lte: before_blk_no}});
     },
 
+    async addPendingSpentBares(spents){
+        if(spents.length > 0){
+            await database.collection("pending_spents_bare").insertMany(spents);
+        }
+    },
     async addPendingSpents(spents){
         if(spents.length > 0){
             await database.collection("pending_spents").insertMany(spents);
@@ -449,6 +472,22 @@ module.exports = {
         }
     },
 
+    async removeAllPendingTransactions(){
+        return Promise.all([
+            database.collection("pending_coins").remove({}),
+            support_multisig ? database.collection("pending_coins_multisig").remove({}) : Promise.resolve(),
+            database.collection("pending_coins_noaddr").remove({}),
+
+            database.collection("pending_payloads").remove({}),
+
+            resolve_spending ? database.collection("pending_spents").remove({}) : Promise.resolve(),
+            resolve_spending && support_multisig ? database.collection("pending_spents_multisig").remove({}) : Promise.resolve(),
+            resolve_spending ? database.collection("pending_spents_noaddr").remove({}) : Promise.resolve(),
+            
+            resolve_spending ? Promise.resolve() : database.collection("pending_spents_bare").remove({}),
+        ]);
+    },
+
     /**
      * Delete all pending info related to incoming txids
      * 
@@ -463,14 +502,16 @@ module.exports = {
 
         return Promise.all([
             database.collection("pending_coins").bulkWrite(ops, { ordered: false} ), 
-            config.coin_traits.MULTISIG ? database.collection("pending_coins_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
+            support_multisig ? database.collection("pending_coins_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
             database.collection("pending_coins_noaddr").bulkWrite(ops, { ordered: false} ), 
 
             database.collection("pending_payloads").bulkWrite( ops, { ordered: false} ),
 
-            database.collection("pending_spents").bulkWrite(ops, { ordered: false} ),
-            config.coin_traits.MULTISIG ? database.collection("pending_spents_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
-            database.collection("pending_spents_noaddr").bulkWrite(ops, { ordered: false} ),
+            resolve_spending ? database.collection("pending_spents").bulkWrite(ops, { ordered: false } ) : Promise.resolve(),
+            resolve_spending && support_multisig ? database.collection("pending_spents_multisig").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
+            resolve_spending ? database.collection("pending_spents_noaddr").bulkWrite(ops, { ordered: false} ) : Promise.resolve(),
+            
+            resolve_spending ? Promise.resolve() : database.collection("pending_spents_bare").bulkWrite(ops, { ordered: false} ),
         ]);
         
         /*
@@ -510,7 +551,7 @@ module.exports = {
                     if(stNow - t > config.min_pending_time){ //tx must be kept in pending queue for enough time period before it can be detected as rejected.
                         if(!rejects.has(sp.tx_id)){
                             async function coin_found(name){
-                                if((name == "coins_multisig" || name == "pending_coins_multisig") && (!config.coin_traits.MULTISIG)) return false;
+                                if((name == "coins_multisig" || name == "pending_coins_multisig") && (!support_multisig)) return false;
 
                                 return await collections[name].countDocuments({tx_id: sp.spent_tx_id, pos: sp.pos}) > 0;
                             }

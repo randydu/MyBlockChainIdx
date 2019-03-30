@@ -13,7 +13,9 @@ const is_BPX = node.coin == 'bpx'; ///< we are sampling BlocPal blockchain
 
 const coin_traits = config.coin_traits;
 const support_payload = coin_traits.payload;
+
 const use_rest_api = config.use_rest_api;
+const resolve_spending = config.resolve_spending;
 
 const dal = require('./dal');
 
@@ -119,9 +121,11 @@ async function process_tis(blk_tis){
     let spents_backup = []; 
 
     //spents of txs in mempool
-    let pending_spents = [];
-    let pending_spents_multisig = [];
-    let pending_spents_noaddr = [];
+    let pending_spents_bare = []; //! resolve_spending
+
+    let pending_spents = []; //resolve_spending
+    let pending_spents_multisig = [];//resolve_spending
+    let pending_spents_noaddr = [];//resolve_spending
 
     //coins on either blockchain or mempool
     let coins = [];
@@ -244,57 +248,67 @@ async function process_tis(blk_tis){
                             }
                             
                             if(pending){
+                                //TODO: (Mar. 29, 2019) The processing of pending tx is too time-consuming if there are many pending txs 
+                                //(such as BTC, there are even 1M), so we cannot resolve all information during the sampling phrase.
+                                // the (address, value, height) are only needed by getBalance()::spending field.
+                                //
                                 //(address, value) is only needed for pending spents, the coins table only holds unspent xo.
                                 //TODO: we can retrieve the (address, value) info from dal --- the coin should already be in database.
-                                let tx_spent = await getTransactionInfo(spent.txid);
-                                if(tx_spent == null){
-                                    obj.level = dal.LOG_LEVEL_WARN; //just affect the balance::pending value
-                                    obj.message = `spent tx [${spent.txid}] not found`;
-                                    obj.code = 'TX_NOT_FOUND';
-                                    logs.push(obj);
-
-                                    debug.warn(obj.message);
-                                } else {
-                                    if(tx_spent.vout.length <= spent.vout){
-                                        obj.code = 'SPENT_NOT_FOUND';
+                                //However, the tx_spent might only exists in mempool.
+                                if(resolve_spending){
+                                    let tx_spent = await getTransactionInfo(spent.txid);
+                                    if(tx_spent == null){
                                         obj.level = dal.LOG_LEVEL_WARN; //just affect the balance::pending value
-                                        obj.message = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
+                                        obj.message = `spent tx [${spent.txid}] not found`;
+                                        obj.code = 'TX_NOT_FOUND';
                                         logs.push(obj);
 
                                         debug.warn(obj.message);
                                     } else {
-                                        let out = tx_spent.vout[spent.vout];
-                                        obj.value = getVoutAmount(out);
+                                        if(tx_spent.vout.length <= spent.vout){
+                                            obj.code = 'SPENT_NOT_FOUND';
+                                            obj.level = dal.LOG_LEVEL_WARN; //just affect the balance::pending value
+                                            obj.message = `Spent UTXO not found, tx_spent.vout.length = [${tx_spent.vout.length}] <= spent.vout [${spent.vout}]`;
+                                            logs.push(obj);
 
-                                        if(typeof tx_spent.blockhash === 'undefined'){
-                                            obj.height = -1; //in mempool
-                                        }else{
-                                            /**
-                                             * we have tx_spent.confirmations, which can calculate the height = latest_blk - confirmations + 1
-                                             * but the latest_blk might not be the same value RPC-api used to calculate the confirmations, so we
-                                             * have to rely on api to figure out the right answer 
-                                             */
-                                            if(tx_spent.height){
-                                                //BPX (maybe other coin?) has "height" field from getrawtransaction().
-                                                obj.height = +tx_spent.height;
-                                            } else {
-                                                obj.height = await getBlockHeight(tx_spent.blockhash);
-                                            }
-                                        }
+                                            debug.warn(obj.message);
+                                        } else {
+                                            let out = tx_spent.vout[spent.vout];
+                                            obj.value = getVoutAmount(out);
 
-                                        if(typeof out.scriptPubKey.addresses === 'undefined'){
-                                            obj.script = out.scriptPubKey;
-                                            pending_spents_noaddr.push(obj);
-                                        }else{
-                                            if(out.scriptPubKey.addresses.length != 1){
-                                                obj.addresses = out.scriptPubKey.addresses;
-                                                pending_spents_multisig.push(obj);
+                                            if(typeof tx_spent.blockhash === 'undefined'){
+                                                obj.height = -1; //in mempool
                                             }else{
-                                                obj.address = out.scriptPubKey.addresses[0];
-                                                pending_spents.push(obj);
+                                                /**
+                                                 * we have tx_spent.confirmations, which can calculate the height = latest_blk - confirmations + 1
+                                                 * but the latest_blk might not be the same value RPC-api used to calculate the confirmations, so we
+                                                 * have to rely on api to figure out the right answer 
+                                                 */
+                                                if(tx_spent.height){
+                                                    //BPX (maybe other coin?) has "height" field from getrawtransaction().
+                                                    obj.height = +tx_spent.height;
+                                                } else {
+                                                    obj.height = await getBlockHeight(tx_spent.blockhash);
+                                                }
+                                            }
+
+                                            if(typeof out.scriptPubKey.addresses === 'undefined'){
+                                                obj.script = out.scriptPubKey;
+                                                pending_spents_noaddr.push(obj);
+                                            }else{
+                                                if(out.scriptPubKey.addresses.length != 1){
+                                                    obj.addresses = out.scriptPubKey.addresses;
+                                                    pending_spents_multisig.push(obj);
+                                                }else{
+                                                    obj.address = out.scriptPubKey.addresses[0];
+                                                    pending_spents.push(obj);
+                                                }
                                             }
                                         }
                                     }
+                                }else{
+                                    //no need to resolve spending details
+                                    pending_spents_bare.push(obj);
                                 }
                             }else{
                                 if(latest_block - height < coin_traits.max_confirms){ 
@@ -389,13 +403,16 @@ async function process_tis(blk_tis){
     } else { //pending
         if(first_time_save_pendings){
             //avoid key-collision in case the pending tx is already saved in database in last session
-            await dal.removePendingTransactions(txids);
+            //await dal.removePendingTransactions(txids);
+            await dal.removeAllPendingTransactions();
             first_time_save_pendings = false;
         }
         await Promise.all([
-            dal.addPendingSpents(pending_spents),
-            dal.addPendingSpentsMultiSig(pending_spents_multisig),
-            dal.addPendingSpentsNoAddr(pending_spents_noaddr),
+            resolve_spending ? Promise.resolve() : dal.addPendingSpentBares(pending_spents_bare),
+
+            resolve_spending ? dal.addPendingSpents(pending_spents) : Promise.resolve(),
+            resolve_spending ? dal.addPendingSpentsMultiSig(pending_spents_multisig): Promise.resolve(),
+            resolve_spending ? dal.addPendingSpentsNoAddr(pending_spents_noaddr): Promise.resolve(),
 
             dal.addPendingCoins(coins),
             dal.addPendingCoinsMultiSig(coins_multisig),
@@ -503,6 +520,8 @@ async function sample_pendings(){
     debug.info('check pendings >>');
 
     let txids = await client.getrawmempool();
+    debug.info(`Total txs in mem-pool ${txids.length}`);
+
     if(txids.length > 0){
         let new_txids = []; //new pending txs to save to database.
 
@@ -516,6 +535,7 @@ async function sample_pendings(){
 
         let N = new_txids.length;
         if(N > 0){
+            debug.info(`Total new txs in mem-pool ${N}`);
             for(const txid of new_txids){
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){

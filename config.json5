@@ -1,6 +1,6 @@
 {
     batch_blocks: 1000, //check how many blocks in a batch
-   // max_txs: 100, //process total of txs in a batch
+    max_txs: 100, //process total of txs in a batch
     //[PERFORMANCE] try search can and cancel the in-memory coins with incoming spents before commiting to database.
     // It could take longer time when the in-memory coins are huge.
     coins_spent_in_mem_cancel: false, 
@@ -10,6 +10,9 @@
     //so we must be patient and wait enough time before starting check if its inputs are available on blockchain. 
     //if after a long time waiting, one of its inputs is still missing, it can be tagged as rejected.
     min_pending_time: 36000, //10 hours
+
+    //Do not try to resolve spending details (address, value, height) of transactions in mem-pool
+    resolve_spending: false, 
 
     coins: {//coin_traits
         bpx: { 
@@ -102,6 +105,19 @@
             "rpcversion": "0.15.0",
             "rpcport": 8332,
             "rpchost": "127.0.0.1",
+            "rpcuser": "bitcoin",
+            "rpcpassword": "cHASEtOPcOIN_2018"
+        },
+        {
+            "id": "btc-mainnet-coinbox",
+            "description": "Bitcoin main-net",
+            coin: "btc",
+            "network": "mainnet",
+            "timeout": 300000,
+
+            "rpcversion": "0.15.0",
+            "rpcport": 8332,
+            "rpchost": "192.168.0.135",
             "rpcuser": "bitcoin",
             "rpcpassword": "cHASEtOPcOIN_2018"
         },
