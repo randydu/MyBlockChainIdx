@@ -1,6 +1,14 @@
 Change Log
 ==========
 
+v1.4.1 (Mar. 31, 2019)
+----------------------
+
+- fix pending tx not found issue.
+  the pending tx-id cannot find its corresponding transaction from node (node is not fully syncronized with peers),
+  it is ignored and will be processed later.
+
+
 v1.4.0 (Mar. 30, 2019)
 ----------------------
 

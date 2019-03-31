@@ -536,19 +536,22 @@ async function sample_pendings(){
         let N = new_txids.length;
         if(N > 0){
             debug.info(`Total new txs in mem-pool ${N}`);
-            for(const txid of new_txids){
+            for(let i = 0; i < new_txids.length; i++){
+                const txid = new_txids[i]; 
                 let ti = await getTransactionInfo(txid);
                 if(ti == null){
-                    debug.throw_error(`transaction [${txid}]  not found!`);
+                    debug.warn(`transaction [${txid}]  not found, ignore for later processing!`);
+                    new_txids[i] = '';
+                }else{
+                    await packer.add_ti(-1, '', N, ti);
                 }
-                await packer.add_ti(-1, '', N, ti);
             };
 
             await packer.flush();
 
             //now update on success
             new_txids.forEach(txid => {
-                pending_txids.add(txid);
+                if(txid.length > 0) pending_txids.add(txid);
             });
         }
     }
