@@ -8,13 +8,18 @@ v1.4.1 (Mar. 31, 2019)
   the pending tx-id cannot find its corresponding transaction from node (node is not fully syncronized with peers),
   it is ignored and will be processed later.
 
-
 v1.4.0 (Mar. 30, 2019)
 ----------------------
 
 - adds config::resolve_spending;
   resolve spending details (address, value, height) can be very time consuming when the total number of pending transactions is huge,
   the spending details are only needed by api getBalance()::spending optional fields.
+
+  new collection "pending_spents_bare" is created to save raw tx of mempool.
+
+  resolve_spending should be true by default for all previous versions. The db consumer can detect the existence of "pending_spents_bare" to 
+  know if spending is resolved by scanner.
+
 - fix issue that the pending records are not purged between different sessions.
 
 v1.3.2 (Mar. 25, 2019)
